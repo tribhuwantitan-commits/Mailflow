@@ -22,9 +22,12 @@ from app.db.base import Base
 
 class APIKey(Base):
     __tablename__ = "api_keys"
-    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     organization_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
@@ -41,12 +44,12 @@ class EmailMessage(Base):
         UniqueConstraint("organization_id", "idempotency_key", name="uq_email_idempotency"),
         Index("ix_email_org_created", "organization_id", "created_at"),
     )
-    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     organization_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+        Uuid(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
     api_key_id: Mapped[UUID | None] = mapped_column(
-        Uuid, ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True
+        Uuid(as_uuid=True), ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True
     )
     idempotency_key: Mapped[str | None] = mapped_column(String(128))
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -75,16 +78,19 @@ class OutboxEvent(Base):
         Index("ix_outbox_state_next_attempt", "state", "next_attempt_at"),
         Index("ix_outbox_state_lease", "state", "lease_until"),
     )
-    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     email_id: Mapped[UUID] = mapped_column(
-        Uuid, ForeignKey("email_messages.id", ondelete="CASCADE"), nullable=False, unique=True
+        Uuid(as_uuid=True),
+        ForeignKey("email_messages.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
     )
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     next_attempt_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    lease_token: Mapped[UUID | None] = mapped_column(Uuid)
+    lease_token: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

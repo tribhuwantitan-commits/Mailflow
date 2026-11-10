@@ -11,8 +11,16 @@ from app.db import ownership as _ownership  # noqa: F401 - register ORM owner gu
 def create_database_engine(
     database_url: str | SecretStr,
     connect_timeout_seconds: int = 5,
+    pool_size: int = 5,
+    max_overflow: int = 10,
+    pool_timeout: int = 30,
+    pool_recycle: int = 1800,
 ) -> Engine:
-    """Create a synchronous SQLAlchemy engine without connecting eagerly."""
+    """Create a synchronous SQLAlchemy engine without connecting eagerly.
+
+    Conservative pool defaults for a small production VM (2 vCPU / 4 GB RAM).
+    pool_size + max_overflow stays well under PostgreSQL max_connections.
+    """
     url_value = (
         database_url.get_secret_value() if isinstance(database_url, SecretStr) else database_url
     )
@@ -20,7 +28,15 @@ def create_database_engine(
     engine_options: dict[str, object] = {"pool_pre_ping": True}
 
     if url.get_backend_name() == "postgresql":
-        engine_options["connect_args"] = {"connect_timeout": connect_timeout_seconds}
+        engine_options.update(
+            {
+                "pool_size": pool_size,
+                "max_overflow": max_overflow,
+                "pool_timeout": pool_timeout,
+                "pool_recycle": pool_recycle,
+                "connect_args": {"connect_timeout": connect_timeout_seconds},
+            }
+        )
 
     return create_engine(url, **engine_options)
 
