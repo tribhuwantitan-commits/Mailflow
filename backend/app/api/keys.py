@@ -50,6 +50,23 @@ def unavailable() -> APIError:
     )
 
 
+def _unique_key_name(db: Session, organization_id: UUID, base_name: str) -> str:
+    """Return a unique API key name within the organization.
+
+    If base_name is already taken, append " 1", " 2", ... until a free name is found.
+    """
+    existing = db.scalars(select(APIKey).where(APIKey.organization_id == organization_id)).all()
+    matching = [k for k in existing if k.name == base_name or k.name.startswith(f"{base_name} ")]
+    if not matching:
+        return base_name
+    next_num = len(matching) + 1
+    candidate = f"{base_name} {next_num}"
+    while any(k.name == candidate for k in matching):
+        next_num += 1
+        candidate = f"{base_name} {next_num}"
+    return candidate
+
+
 @router.post("", status_code=201)
 def create_key(
     organization_id: UUID,
@@ -60,8 +77,9 @@ def create_key(
 ) -> dict:
     try:
         owner(db, organization_id, user)
+        name = _unique_key_name(db, organization_id, payload.name)
         raw, digest = create_access_token()
-        key = APIKey(organization_id=organization_id, name=payload.name, key_hash=digest)
+        key = APIKey(organization_id=organization_id, name=name, key_hash=digest)
         db.add(key)
         db.commit()
         db.refresh(key)
