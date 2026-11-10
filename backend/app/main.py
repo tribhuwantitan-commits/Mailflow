@@ -31,6 +31,10 @@ def create_app(
     engine = database_engine or create_database_engine(
         app_settings.database_url,
         app_settings.database_connect_timeout_seconds,
+        pool_size=app_settings.database_pool_size,
+        max_overflow=app_settings.database_max_overflow,
+        pool_timeout=app_settings.database_pool_timeout,
+        pool_recycle=app_settings.database_pool_recycle,
     )
 
     @asynccontextmanager
