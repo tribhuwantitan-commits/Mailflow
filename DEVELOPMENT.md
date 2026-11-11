@@ -195,7 +195,8 @@ The current Starlette release emits a deprecation warning when its `TestClient` 
 [docs/DASHBOARD-PLAN.md](docs/DASHBOARD-PLAN.md),
 [docs/DOMAIN-VERIFICATION.md](docs/DOMAIN-VERIFICATION.md),
 [docs/TRANSACTIONAL-VS-MARKETING.md](docs/TRANSACTIONAL-VS-MARKETING.md),
-[docs/COMPETITOR-BENCHMARKS.md](docs/COMPETITOR-BENCHMARKS.md) and
+[docs/COMPETITOR-BENCHMARKS.md](docs/COMPETITOR-BENCHMARKS.md),
+[docs/PRICING-ANALYSIS.md](docs/PRICING-ANALYSIS.md) and
 [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) for scope, limitations and sequencing.
 Do not treat these phases as implemented.
 
