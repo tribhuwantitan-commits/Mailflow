@@ -191,8 +191,10 @@ The current Starlette release emits a deprecation warning when its `TestClient` 
 - Email verification, password reset, MFA, login rate limiting, member invitations/role management, and scheduled cleanup of expired auth-session rows are not implemented yet. User deletion and ownership transfer are also not exposed.
 - REST email acceptance and the outbox are implemented. The provider is selected with `MAIL_PROVIDER`: `fake` (default, sends no real mail) or `ses` (real Amazon SES `SendEmail`). Sender-domain management, delivery-event ingestion, SMTP submission, frontend, Redis/Celery and deployment are **not** implemented. `status=sent` means the provider accepted the message, not that the recipient server delivered it. Message bodies are stored in the database; retention/cleanup and rate limiting are not implemented. PostgreSQL integration validation is pending for the pooled Neon endpoint.
 
-**Planned only:** sender-domain management and verification, delivery-event ingestion (SNS/SQS), open/click tracking, the user dashboard, SMTP submission, production access. See [ARCHITECTURE.md](ARCHITECTURE.md),
-[docs/DELIVERY-EVENTS.md](docs/DELIVERY-EVENTS.md) and [docs/DASHBOARD-PLAN.md](docs/DASHBOARD-PLAN.md) for scope, limitations and sequencing. Do not treat these phases as implemented.
+**Planned only:** sender-domain management and verification, delivery-event ingestion (SNS/SQS), open/click tracking, the user dashboard, SMTP submission, production access. See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/DELIVERY-EVENTS.md](docs/DELIVERY-EVENTS.md),
+[docs/DASHBOARD-PLAN.md](docs/DASHBOARD-PLAN.md) and
+[docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) for scope, limitations and sequencing.
+Do not treat these phases as implemented.
 
 ## Amazon SES setup and verification
 
