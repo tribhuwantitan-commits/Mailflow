@@ -1,4 +1,11 @@
-"""Bounded, lease-fenced outbox worker; fake provider only."""
+"""Bounded, lease-fenced outbox worker.
+
+Retry behaviour is tuned for transactional mail (OTP, password reset, receipts):
+the first retries happen within seconds, because a reset link that arrives four
+minutes late is useless. The schedule is capped at one hour and total attempts
+are bounded (MAX_ATTEMPTS), so a permanently failing event still ends up in a
+terminal "failed" state rather than retrying forever.
+"""
 
 import json
 import logging
@@ -27,9 +34,17 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Retry delays in seconds, indexed by attempt number. Transactional mail is
+# time-sensitive: a password-reset or OTP message that arrives minutes late is
+# worthless, so the schedule starts at 2s and only grows after the early retries
+# have failed. After the last entry the delay is capped at one hour.
+BACKOFF_SECONDS = (2, 5, 15, 60, 300, 900, 3600)
+
+
 def backoff(attempt: int) -> timedelta:
-    """Retry at 20, 40, 80, 160 seconds (cap one hour)."""
-    return timedelta(seconds=min(3600, 10 * 2 ** min(attempt, 9)))
+    """Delay before the next attempt: 2s, 5s, 15s, 60s, ... then 1 hour cap."""
+    index = max(0, min(attempt - 1, len(BACKOFF_SECONDS) - 1))
+    return timedelta(seconds=BACKOFF_SECONDS[index])
 
 
 def eligible(now: datetime):

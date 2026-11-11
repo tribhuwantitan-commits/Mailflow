@@ -362,6 +362,69 @@ customer ke paise se (add-on pricing) recover karna padega.
 
 ---
 
+## 10.5 Transactional-only: isse kya hat gaya, kya bacha
+
+Product decision: **sirf transactional** (OTP, password reset, verification link,
+receipt, notification). Marketing/bulk nahi. Isse dashboard aur core ka scope dono
+chhote ho jate hain, aur SES approval bhi aasan hota hai.
+
+### Hat gaya — ye sab **mat** banao
+
+| Feature | Kyun nahi chahiye |
+|---|---|
+| Campaigns / bulk send API | aap bhejte hi nahi |
+| Subscriber lists / segments / tags | koi audience manage nahi |
+| Double opt-in flow | single-recipient, one-to-one mail |
+| Template editor + visual builder | API se bhejte ho, template aapke customer ka kaam |
+| A/B testing, subject optimization | transactional mail A/B test nahi hota |
+| RSS-to-email, scheduling, send-time optimization | event-driven mail |
+| Broadcast scheduling, drip sequences | — |
+| Unsubscribe/preference center | transactional mail par unsubscribe fit nahi hota* |
+| Open/click analytics ka bada dashboard | clicks OTP mein almost zero — chart khaali dikhega |
+| Inbox-placement seed testing | bulk-only problem |
+| Lists/segments per tenant | — |
+
+\* `List-Unsubscribe` header **optional** hai jab mail pure transactional ho
+(Gmail/Yahoo bulk-sender rules 5,000+/day bulk senders par lagte hain, aur unme bhi
+transactional mail ko chhoot hai). Aapke volume se pehle hafte mein 5,000/day nahi
+hoga, to ye baad ka kaam hai. **Magar** header add karna sasta hai — 7c mein ek
+optional flag ke saath daal denge.
+
+### Bacha — yehi asli dashboard hai (transactional)
+
+| Widget | Kaam | Priority |
+|---|---|---|
+| **Delivered / Failed** (big number) | "kya pahuncha" — sabse ahem | P0 |
+| **Per-message timeline** | Accepted → Delivered → Bounced, timestamps ke saath | P0 |
+| **Failure reasons table** | bounce code + SMTP diagnostic ("mailbox full", "no such user") | P0 |
+| **Latency: accepted → delivered** | OTP ke liye critical — "kitne second mein pahuncha" | P1 |
+| Attempts / retries per message | worker ka behaviour dikhta hai | P1 |
+| Suppression list (view/add/remove) | bounce ke baad dobara send na ho | P1 |
+| Bounce % + Complaint % (30 din) | reputation health, threshold 5% / 0.1% | P1 |
+| Opened (count only, no chart) | optional, disclaimer ke saath | P2 |
+| Clicked | sirf tab jab customer ne click tracking on kiya ho | P2 |
+| SPF/DKIM/DMARC status per verified domain | onboarding ka hissa | P1 |
+
+### Ek naya metric jo transactional mein sabse zyada matter karta hai
+
+**Delivery latency.** Password reset mein 2 second aur 40 second ka farq user
+experience hai. Har message ke liye:
+
+```
+latency = delivered_at (SES Delivery event) - accepted_at (our POST /v1/emails)
+```
+
+`email_messages` mein `accepted_at` (already `created_at`) + `delivered_at` se derive
+ho jayega. Dashboard card: **p50 / p95 latency, last 24h**. Ye Resend/Brevo bhi
+dikhate hain, aur yahi aapka OTP-focused differentiator ban sakta hai.
+
+### Approval ke liye bhi aasan
+
+SES production access form mein "Mail type: **Transactional**" chunna ek bada
+advantage hai — marketing ke sawal (opt-in proof, unsubscribe, list source) poochhe
+hi nahi jate. `docs/LAUNCH-CHECKLIST.md` ka draft already transactional-only likha
+hua hai.
+
 ## 11. Phasing
 
 | Phase | Kaam | Naya infra | Ship hone par kya dikhega |
