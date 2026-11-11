@@ -26,6 +26,9 @@ class SubmissionResult:
 
     provider_message_id: str
     accepted: bool
+    # Human-readable provider name recorded on the message row ("fake", "ses").
+    # Added so the outbox no longer hardcodes the provider label.
+    provider_name: str = "fake"
 
 
 class EmailProvider(Protocol):
@@ -47,6 +50,7 @@ class FakeEmailProvider:
         return SubmissionResult(
             provider_message_id=f"fake-{len(self.submitted_messages)}",
             accepted=True,
+            provider_name="fake",
         )
 
 

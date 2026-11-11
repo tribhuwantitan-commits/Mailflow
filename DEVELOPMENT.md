@@ -189,9 +189,40 @@ The current Starlette release emits a deprecation warning when its `TestClient` 
 - The database enforces foreign keys, valid membership roles, membership-key uniqueness, and at most one owner membership. It cannot declaratively enforce exactly one matching owner row across these two tables; privileged raw SQL can bypass the ORM guard. Any future ownership transfer needs a dedicated atomic implementation, tests, and a database trigger if raw SQL must also be constrained.
 - Validation errors do not echo request values. Auth responses do not include password hashes or JSON access tokens. The application does not log passwords or raw tokens.
 - Email verification, password reset, MFA, login rate limiting, member invitations/role management, and scheduled cleanup of expired auth-session rows are not implemented yet. User deletion and ownership transfer are also not exposed.
-- Fake-provider REST email acceptance and the outbox are implemented, but **no real email is sent**. Verified domains, SES, SMTP, frontend, Redis/Celery and deployment are not implemented. Message bodies are stored in the database; retention/cleanup and rate limiting are not implemented. PostgreSQL integration validation is pending.
+- REST email acceptance and the outbox are implemented. The provider is selected with `MAIL_PROVIDER`: `fake` (default, sends no real mail) or `ses` (real Amazon SES `SendEmail`). Sender-domain management, delivery-event ingestion, SMTP submission, frontend, Redis/Celery and deployment are **not** implemented. `status=sent` means the provider accepted the message, not that the recipient server delivered it. Message bodies are stored in the database; retention/cleanup and rate limiting are not implemented. PostgreSQL integration validation is pending for the pooled Neon endpoint.
 
-**Planned only:** Phase 5 — domain management and sender verification; Phase 6 — Amazon SES integration and delivery events; Phase 7 — SMTP submission; Phase 8 — production readiness. See [ARCHITECTURE.md](ARCHITECTURE.md) for scope and limitations. Do not treat these phases as implemented.
+**Planned only:** sender-domain management and verification, delivery-event ingestion (SNS/SQS), open/click tracking, the user dashboard, SMTP submission, production access. See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/DELIVERY-EVENTS.md](docs/DELIVERY-EVENTS.md),
+[docs/DASHBOARD-PLAN.md](docs/DASHBOARD-PLAN.md),
+[docs/DOMAIN-VERIFICATION.md](docs/DOMAIN-VERIFICATION.md),
+[docs/TRANSACTIONAL-VS-MARKETING.md](docs/TRANSACTIONAL-VS-MARKETING.md),
+[docs/COMPETITOR-BENCHMARKS.md](docs/COMPETITOR-BENCHMARKS.md),
+[docs/PRICING-ANALYSIS.md](docs/PRICING-ANALYSIS.md),
+[docs/UNIT-ECONOMICS.md](docs/UNIT-ECONOMICS.md),
+[docs/PAYMENTS-TAX-FREETIER.md](docs/PAYMENTS-TAX-FREETIER.md),
+[docs/SES-TEST-GUIDE.md](docs/SES-TEST-GUIDE.md) and
+[docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) for scope, limitations and sequencing.
+Do not treat these phases as implemented.
+
+## Amazon SES setup and verification
+
+The SES adapter is selected with `MAIL_PROVIDER=ses` and configured by `AWS_REGION`,
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_FROM_EMAIL` and optionally
+`SES_CONFIGURATION_SET` (see `backend/.env.example`). Two helper scripts exist:
+
+```bash
+cd backend
+python -m app.scripts.check_ses --offline   # validate .env only, no AWS calls
+python -m app.scripts.check_ses             # credentials, identity, config set, quota
+python -m app.scripts.send_test --to success@simulator.amazonses.com
+```
+
+`check_ses` sends nothing and prints no secrets. `send_test` sends exactly one message
+and refuses to run unless `MAIL_PROVIDER=ses`. Prefer the SES **mailbox simulator**
+addresses (`success@`, `bounce@`, `complaint@simulator.amazonses.com`) — they exercise
+the same API path without touching a real inbox.
+
+Note: SES identities are **per Region**. A domain verified in `ap-south-1` is not
+verified in `us-east-1`; `AWS_REGION` and the console Region must match.
 
 ## Phase 3 local workflow
 

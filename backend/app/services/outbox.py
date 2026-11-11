@@ -1,4 +1,11 @@
-"""Bounded, lease-fenced outbox worker; fake provider only."""
+"""Bounded, lease-fenced outbox worker.
+
+Retry behaviour is tuned for transactional mail (OTP, password reset, receipts):
+the first retries happen within seconds, because a reset link that arrives four
+minutes late is useless. The schedule is capped at one hour and total attempts
+are bounded (MAX_ATTEMPTS), so a permanently failing event still ends up in a
+terminal "failed" state rather than retrying forever.
+"""
 
 import json
 import logging
@@ -27,9 +34,17 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Retry delays in seconds, indexed by attempt number. Transactional mail is
+# time-sensitive: a password-reset or OTP message that arrives minutes late is
+# worthless, so the schedule starts at 2s and only grows after the early retries
+# have failed. After the last entry the delay is capped at one hour.
+BACKOFF_SECONDS = (2, 5, 15, 60, 300, 900, 3600)
+
+
 def backoff(attempt: int) -> timedelta:
-    """Retry at 20, 40, 80, 160 seconds (cap one hour)."""
-    return timedelta(seconds=min(3600, 10 * 2 ** min(attempt, 9)))
+    """Delay before the next attempt: 2s, 5s, 15s, 60s, ... then 1 hour cap."""
+    index = max(0, min(attempt - 1, len(BACKOFF_SECONDS) - 1))
+    return timedelta(seconds=BACKOFF_SECONDS[index])
 
 
 def eligible(now: datetime):
@@ -155,8 +170,11 @@ def process_event(factory: sessionmaker[Session], provider: EmailProvider, event
             event = db.get(OutboxEvent, event_id)
             message = db.get(EmailMessage, event.email_id)
             if outcome == "sent":
-                message.status = "sent"  # Acceptance only, never delivery.
-                message.provider = "fake"
+                # "sent" means the provider ACCEPTED the message, not that the
+                # recipient's server delivered it. Delivery/bounce state arrives
+                # later through SES event publishing (see docs/DELIVERY-EVENTS.md).
+                message.status = "sent"
+                message.provider = result.provider_name
                 message.provider_message_id = result.provider_message_id
                 message.error_code = None
             else:
@@ -233,14 +251,14 @@ def requeue_failed(factory: sessionmaker[Session], email_id: UUID) -> bool:
 
 
 def main() -> None:
-    """Run one bounded fake-provider tick, or view status/requeue from CLI."""
+    """Run one bounded outbox worker tick, or view status/requeue from CLI."""
     import argparse
 
     from app.config import Settings
     from app.database import create_database_engine, create_session_factory
-    from app.providers.email import FakeEmailProvider
+    from app.providers import get_email_provider
 
-    parser = argparse.ArgumentParser(description="MailFlow fake-provider outbox worker")
+    parser = argparse.ArgumentParser(description="MailFlow outbox worker")
     parser.add_argument("--status", action="store_true")
     parser.add_argument("--requeue", type=UUID, metavar="EMAIL_ID")
     args = parser.parse_args()
@@ -249,6 +267,7 @@ def main() -> None:
     engine = create_database_engine(settings.database_url)
     try:
         factory = create_session_factory(engine)
+        provider = get_email_provider(settings)
         if args.status:
             logger.info("worker_status %s", worker_status(factory))
         elif args.requeue:
@@ -258,7 +277,7 @@ def main() -> None:
                 requeue_failed(factory, args.requeue),
             )
         else:
-            count = process_due(factory, FakeEmailProvider())
+            count = process_due(factory, provider)
             logger.info("worker_tick processed=%d status=%s", count, worker_status(factory))
     finally:
         engine.dispose()

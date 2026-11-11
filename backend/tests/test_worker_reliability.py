@@ -15,6 +15,7 @@ from app.models.delivery import EmailMessage, OutboxEvent
 from app.providers.email import FakeEmailProvider
 from app.services.outbox import (
     LEASE_SECONDS,
+    backoff,
     now_utc,
     process_due,
     process_event,
@@ -179,3 +180,16 @@ def test_stale_worker_cannot_overwrite_replacement_claim(client):
     with factory() as db:
         assert db.get(EmailMessage, email_id).status == "sent"
         assert db.get(EmailMessage, email_id).attempt_count == 2
+
+
+def test_backoff_is_seconds_scale_for_transactional_mail():
+    """OTP and password-reset mail must retry in seconds, not in minutes."""
+    assert backoff(1) == timedelta(seconds=2)
+    assert backoff(2) == timedelta(seconds=5)
+    assert backoff(3) == timedelta(seconds=15)
+    assert backoff(4) == timedelta(seconds=60)
+    assert backoff(5) == timedelta(seconds=300)
+    # Unknown attempts exceed the bounded attempt count but must stay sane.
+    assert backoff(99) == timedelta(seconds=3600)
+    assert backoff(0) == timedelta(seconds=2)
+    assert backoff(-3) == timedelta(seconds=2)
