@@ -39,6 +39,71 @@ SES mein do alag cheezein hain:
 
 ---
 
+## 1a. IAM console mein kahan milega (click-by-click)
+
+IAM ek **global** service hai — region selector (Asia Pacific/Mumbai) se koi farq nahi
+padta, jo dikh raha hai wahi rehne do.
+
+**Sabse tez raasta — search bar:**
+
+1. AWS console ke top bar mein **`Search`** box par jao (mobile par list icon → "Search")
+2. Type karo: **`IAM`**
+3. Result mein **"IAM"** / "Identity and Access Management" par tap karo → IAM dashboard khul jayega
+
+**Direct links (mobile par bookmark kar lo):**
+
+| Page | URL |
+|---|---|
+| IAM dashboard | `https://console.aws.amazon.com/iam/` |
+| Users list | `https://console.aws.amazon.com/iam/home#/users` |
+| Create user wizard | `https://console.aws.amazon.com/iam/home#/users$new?step=details` |
+
+**Desktop view mein left sidebar:** Access management → **Users**
+
+### Create user wizard — 4 steps
+
+| Step | Kya bharna hai |
+|---|---|
+| **1. User details** | User name: `mailflow-ses-sender`<br>❌ "Provide user access to the AWS Management Console" **unchecked** rakho |
+| **2. Set permissions** | "Attach policies directly" chuno → search `AmazonSESFullAccess` → ✅ tick |
+| **3. Tags** | kuch nahi (Skip) |
+| **4. Review and create** | **Create user** |
+
+### Access key — ye step alag hai (log yahan atakte hain)
+
+Create user ke baad jo page khulta hai:
+
+1. **Summary** page par **`Security credentials`** tab
+2. Neeche **"Access keys"** section → **Create access key**
+3. Use case: **"Local code"** (ya "Application running outside AWS")
+4. Description tag: `vps-mailflow-prod`
+5. **Create access key** → ab screen par **Access key ID + Secret access key** dikhega
+
+⚠️ **Secret key sirf ek baar dikhti hai.** Turant copy karo. "Download .csv" bhi dabao,
+magar us CSV ko encrypted jagah rakho (ya key save karne ke baad delete kar do).
+
+Phir `.env` mein:
+```
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...
+```
+
+### Mobile tips
+
+- Mobile console mein kuch IAM pages adhoore dikhte hain → Chrome menu → **"Desktop site"** on karo.
+- Secret key mobile par paste karna galti-prone hai — `.env` laptop par edit karo.
+- Secret key WhatsApp/email par mat bhejo.
+
+### IAM na mile to?
+
+| Problem | Reason |
+|---|---|
+| Sidebar mein IAM hai hi nahi | Tum **root** se login nahi ho, ya restricted account ho |
+| "You do not have permission" | AWS Organizations SCP block kar raha hai — root se login karo |
+| AWS Educate / Skill Builder account | in accounts mein IAM restricted hota hai; normal AWS account chahiye |
+
+---
+
 ## 1. IAM user banao (5 min)
 
 Console → **IAM** → Users → **Create user**
