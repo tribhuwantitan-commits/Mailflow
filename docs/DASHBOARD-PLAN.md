@@ -362,13 +362,17 @@ customer ke paise se (add-on pricing) recover karna padega.
 
 ---
 
-## 10.5 Transactional-only: isse kya hat gaya, kya bacha
+## 10.5 Do streams: transactional pehle, marketing alag pipeline par
 
-Product decision: **sirf transactional** (OTP, password reset, verification link,
-receipt, notification). Marketing/bulk nahi. Isse dashboard aur core ka scope dono
-chhote ho jate hain, aur SES approval bhi aasan hota hai.
+Product decision: **transactional pehle ship hoga; marketing rahega magar alag product
+line** ke roop mein — alag sending stream, alag AWS account, alag pricing. Poori list,
+separation ka architecture aur marketing ka anti-spam stack
+[docs/TRANSACTIONAL-VS-MARKETING.md](TRANSACTIONAL-VS-MARKETING.md) mein hai.
 
-### Hat gaya — ye sab **mat** banao
+Neeche sirf **transactional** dashboard ka scope hai; marketing ka dashboard alag
+banega (Phase 13), jisme open/click/campaign analytics honge.
+
+### Transactional stream mein ye sab **mat** banao (marketing stream mein alag se aayenge)
 
 | Feature | Kyun nahi chahiye |
 |---|---|

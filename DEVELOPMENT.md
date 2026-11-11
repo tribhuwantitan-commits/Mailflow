@@ -193,7 +193,8 @@ The current Starlette release emits a deprecation warning when its `TestClient` 
 
 **Planned only:** sender-domain management and verification, delivery-event ingestion (SNS/SQS), open/click tracking, the user dashboard, SMTP submission, production access. See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/DELIVERY-EVENTS.md](docs/DELIVERY-EVENTS.md),
 [docs/DASHBOARD-PLAN.md](docs/DASHBOARD-PLAN.md),
-[docs/DOMAIN-VERIFICATION.md](docs/DOMAIN-VERIFICATION.md) and
+[docs/DOMAIN-VERIFICATION.md](docs/DOMAIN-VERIFICATION.md),
+[docs/TRANSACTIONAL-VS-MARKETING.md](docs/TRANSACTIONAL-VS-MARKETING.md) and
 [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) for scope, limitations and sequencing.
 Do not treat these phases as implemented.
 
