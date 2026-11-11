@@ -233,14 +233,14 @@ def requeue_failed(factory: sessionmaker[Session], email_id: UUID) -> bool:
 
 
 def main() -> None:
-    """Run one bounded fake-provider tick, or view status/requeue from CLI."""
+    """Run one bounded outbox worker tick, or view status/requeue from CLI."""
     import argparse
 
     from app.config import Settings
     from app.database import create_database_engine, create_session_factory
-    from app.providers.email import FakeEmailProvider
+    from app.providers import get_email_provider
 
-    parser = argparse.ArgumentParser(description="MailFlow fake-provider outbox worker")
+    parser = argparse.ArgumentParser(description="MailFlow outbox worker")
     parser.add_argument("--status", action="store_true")
     parser.add_argument("--requeue", type=UUID, metavar="EMAIL_ID")
     args = parser.parse_args()
@@ -249,6 +249,7 @@ def main() -> None:
     engine = create_database_engine(settings.database_url)
     try:
         factory = create_session_factory(engine)
+        provider = get_email_provider(settings)
         if args.status:
             logger.info("worker_status %s", worker_status(factory))
         elif args.requeue:
@@ -258,7 +259,7 @@ def main() -> None:
                 requeue_failed(factory, args.requeue),
             )
         else:
-            count = process_due(factory, FakeEmailProvider())
+            count = process_due(factory, provider)
             logger.info("worker_tick processed=%d status=%s", count, worker_status(factory))
     finally:
         engine.dispose()

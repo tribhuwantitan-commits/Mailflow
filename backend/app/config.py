@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     database_pool_recycle: int = Field(default=1800, ge=60, le=86400)
     auth_token_expire_minutes: int = Field(default=30, ge=5, le=1440)
 
+    # Email provider selection: "fake" or "ses"
+    mail_provider: Literal["fake", "ses"] = Field(default="fake")
+
+    # Amazon SES configuration (only used when mail_provider="ses")
+    aws_region: str = Field(default="us-east-1")
+    aws_access_key_id: str | None = Field(default=None)
+    aws_secret_access_key: SecretStr | None = Field(default=None, repr=False)
+    ses_from_email: str = Field(default="noreply@example.com")
+    ses_configuration_set: str | None = Field(default=None)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

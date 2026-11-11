@@ -17,6 +17,7 @@ from app.api.keys import router as keys_router
 from app.api.organizations import router as organizations_router
 from app.config import Settings
 from app.database import check_database, create_database_engine, create_session_factory
+from app.providers import get_email_provider
 
 logger = logging.getLogger("mailflow.health")
 
@@ -50,6 +51,7 @@ def create_app(
     app.state.settings = app_settings
     app.state.database_engine = engine
     app.state.session_factory = create_session_factory(engine)
+    app.state.email_provider = get_email_provider(app_settings)
 
     @app.exception_handler(APIError)
     async def api_error_handler(_request: Request, exc: APIError) -> JSONResponse:
