@@ -3,12 +3,14 @@
 Status: **planning document.** Kuch bhi yahan "ho gaya" nahi hai. Har item par
 tick tab lagayein jab actually ho jaye.
 
-Do applications hain, aur dono ki **apni timing** hai:
+> **Timing (owner's decision):** dono applications **launch se pehle**, aur **abhi
+> nahi**. Testing phase sandbox mein chalega. Ye document reference hai — jab launch
+> ki taiyari ho tab kholna.
 
 | Application | Kab apply | Blocking requirement |
 |---|---|---|
-| **SES production access** (sandbox se bahar) | code ready hone ke baad, website live hone se pehle bhi chal sakta hai | bounce/complaint handling **actually** bana ho |
-| **AWS Activate Founders** ($1,000) | **website live hone ke baad** | live website + company email (own domain) + paid-tier AWS account |
+| **SES production access** (sandbox se bahar) | business launch se pehle | bounce/complaint handling **actually** bana ho |
+| **AWS Activate Founders** ($1,000) | business launch se pehle | live website + company email (own domain) + paid-tier AWS account |
 
 ---
 
@@ -166,62 +168,50 @@ credits expire ho jate hain.**
 
 ---
 
-## 3. "4-6 mahine survive" — ye hisaab galat hai
+## 3. Hosting: apna VPS, EC2 nahi
 
-Aapka assumption: $1,000 credits = 4-6 mahine ka kharcha. Ye **tabhi** sach hai jab
-aap **AWS par Windows Server + RDS** chalao. Dekho:
+**Decision:** application apne VPS (Windows Server, RDP) par chalega. PostgreSQL Neon par.
+AWS par **sirf** ye services:
 
-| Setup | Monthly | $1,000 se kitne mahine |
+| AWS service | Kaam | Monthly (realistic) |
 |---|---|---|
-| Windows EC2 m5.large + RDS Postgres + ALB | ~$160-190 | **5-6** |
-| Windows EC2 t3.medium + RDS db.t4g.micro | ~$95-110 | **9-10** |
-| Linux t3.small + Neon free Postgres | ~$16 | 60+ (magar credits expire) |
-| **Sirf SES** (app kahin aur chalao) | **~$1-10** | **~100 mahine ka SES** |
+| SES | sending | ~$0.10 per 1,000 emails |
+| SNS + SQS | delivery/bounce/complaint events | free tier ke andar |
+| S3 (optional, baad mein) | archiving / DMARC reports | pennies |
+| **Total** | | **~$1-5** |
 
-Yani: **$1,000 credits 4-6 mahine mein sirf isliye khatam honge kyunki Windows Server
-AWS par chal raha hai.** Windows license AWS par 2-3x mehnga padta hai Linux se.
+EC2, RDS, ALB, Route 53 — **koi nahi**. Isliye $1,000 Activate credits ka matlab yahan
+4-6 mahine ka runway **nahi** hai; wo ek buffer/insurance hai jo tab kaam aayega jab
+volume badhe ya hosting badalni ho. Credits expire hote hain, isliye unhe jalaana nahi —
+sirf zaroorat par use karna hai.
 
-### 3.1 Isliye sifarish
+Note: Windows Server par FastAPI + Postgres chal jaata hai, par TLS, backup, restart
+aur connection management manual rehta hai. Volume badhne par Linux VPS (~₹500-1,500/mo)
+kam dard aur sasta hoga — magar wo future ka faisla hai, aaj ka nahi.
 
-Aapke paas already Windows Server (RDP) hai — **app wahi chalao**. AWS par sirf:
+## 4. Kaam ka order (testing phase → launch)
 
-- **SES** (sending) — $0.10/1,000 emails
-- **S3** (baad mein, archiving) — pennies
-- **SNS + SQS** (events) — free tier ke andar
-- **Neon** (Postgres) — free tier, jo aapke paas already hai
+**Ab (testing phase):**
 
-Isse aapka **asli monthly kharcha ~$1-5** ho jata hai, aur $1,000 credits *poora*
-insurance ban jate hain — jab traffic aaye, ya jab AWS par shift karna ho, tab kaam
-aayenge. Credits expiring hain, to unhe jalaana nahi hai; unhe *option* ki tarah
-rakhna hai.
-
-**Aur ek baat:** Windows Server par FastAPI + PostgreSQL chalana technically chalega,
-par 8-10 customers ke baad process/connection management, TLS, backup, restart pe
-bharosa — sab manual. Din aane par Linux VPS (~₹500-1,500/mo) sasta aur kam dard
-hoga. Abhi ke liye jo hai wahi theek hai, bas AWS par shift karne ki jaldi mat karo.
-
----
-
-## 4. Timeline (suggested)
-
-| Week | Kaam | Deliverable |
+| # | Kaam | Deliverable |
 |---|---|---|
-| 1 | Phase 6.5: SES live test (`check_ses`, `send_test`) | asli email jaata hai |
-| 2-3 | Phase 7a: per-customer domain verification + per-tenant `Source` | customer apna domain verify karta hai |
-| 3-4 | Phase 7b: quota enforcement (recipients par, daily reset) | 50/day limit actually lagta hai |
-| 4-5 | Phase 7c: SNS/SQS events + suppression + auto-pause + List-Unsubscribe | bounce/complaint **actually** handle hota hai |
-| 5 | Website live: product page + ToS + AUP + Privacy + company mailbox | Activate + SES dono unblock |
-| 6 | **SES production access apply** | 5,000/day request |
-| 6 | **AWS Activate Founders apply** | $1,000 |
-| 7-8 | Phase 9: dashboard (delivery_events, stats API, UI) | Resend-jaisa data |
-| 9 | Phase 10: card verification / plans | 100/day tier |
-| launch | Paid plans | — |
+| 1 | Phase 6.5: SES live test (`check_ses`, `send_test`) | asli email jaata hai, sandbox mein |
+| 2 | Phase 7a: per-customer domain verification + per-tenant `Source` | customer apna domain verify karta hai |
+| 3 | Phase 7b: quota enforcement (recipients par, daily reset) | 50/day limit actually lagta hai |
+| 4 | Phase 7c: SNS/SQS events + suppression + auto-pause + `List-Unsubscribe` | bounce/complaint handle hota hai |
+| 5 | Phase 9: dashboard (delivery_events, stats API, UI) | Resend-jaisa data |
+| 6 | Phase 10: card verification / plans | 100/day tier |
 
-Production access **dashboard se pehle** apply ho raha hai — ye jaan-boojhkar hai:
-AWS ko bounce/complaint *handling* chahiye, *dashboard* nahi. Handling 7c mein ban
-jayega.
+**Launch se pehle (jab business launch ki taiyari ho):**
 
----
+| # | Kaam | Note |
+|---|---|---|
+| 7 | Website live: product page + ToS + AUP + Privacy + company mailbox | dono applications ka block |
+| 8 | **SES production access apply** | 5,000/day maango |
+| 9 | **AWS Activate Founders apply** | $1,000 |
+
+Production access dashboard se **pehle** ho sakta hai ya **baad** mein — AWS ko
+bounce/complaint *handling* chahiye (phase 7c), dashboard nahi. Ye owner ka call hai.
 
 ## 5. Risk register
 
@@ -229,7 +219,7 @@ jayega.
 |---|---|---|
 | Ek free tenant spam bhejta hai | **poora SES account pause** — sab customers ka mail band | per-tenant quota + auto-pause at 5%/0.1% + verified-domain-only |
 | Production access reject | launch rukta hai | 7b/7c pehle; specific form; modest quota ask |
-| Credits jaldi khatam | AWS bill | AWS par sirf SES; app apne server par |
+| Credits jaldi khatam | AWS bill | AWS par sirf SES/SNS/SQS; app apne VPS par |
 | Activate reject (no website) | $1,000 nahi milta | website live hone ke baad hi apply |
 | Sandbox 200/day = sabka combined cap | 4 free customers aur khatam | production access launch se pehle |
 | Card verification se abuse | chargebacks | ₹2 auth + velocity limits (Phase 10) |
