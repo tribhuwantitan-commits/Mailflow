@@ -104,6 +104,7 @@ class SESEmailProvider:
         return SubmissionResult(
             provider_message_id=message_id,
             accepted=True,
+            provider_name="ses",
         )
 
     @staticmethod

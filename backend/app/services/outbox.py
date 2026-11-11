@@ -155,8 +155,11 @@ def process_event(factory: sessionmaker[Session], provider: EmailProvider, event
             event = db.get(OutboxEvent, event_id)
             message = db.get(EmailMessage, event.email_id)
             if outcome == "sent":
-                message.status = "sent"  # Acceptance only, never delivery.
-                message.provider = "fake"
+                # "sent" means the provider ACCEPTED the message, not that the
+                # recipient's server delivered it. Delivery/bounce state arrives
+                # later through SES event publishing (see docs/DELIVERY-EVENTS.md).
+                message.status = "sent"
+                message.provider = result.provider_name
                 message.provider_message_id = result.provider_message_id
                 message.error_code = None
             else:

@@ -28,7 +28,8 @@ class Settings(BaseSettings):
     mail_provider: Literal["fake", "ses"] = Field(default="fake")
 
     # Amazon SES configuration (only used when mail_provider="ses")
-    aws_region: str = Field(default="us-east-1")
+    # Identities and quotas are per Region; keep this aligned with the console.
+    aws_region: str = Field(default="ap-south-1")
     aws_access_key_id: str | None = Field(default=None)
     aws_secret_access_key: SecretStr | None = Field(default=None, repr=False)
     ses_from_email: str = Field(default="noreply@example.com")
