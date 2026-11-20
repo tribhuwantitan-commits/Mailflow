@@ -33,3 +33,4 @@ Desktop.ini
 # Stray archives (source packages are built from git, not committed)
 *.zip
 !deploy/*.zip
+docs/VERSION.txt
