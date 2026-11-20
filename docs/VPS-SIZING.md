@@ -2,9 +2,17 @@
 
 Date: Nov 2026. Target: **20,000 emails/day**, **500-1,000 concurrent API requests**.
 
-> **TL;DR:** 4 vCPU / 8 GB RAM kaafi hai — **magar VPS bada karne se pehle 4 code changes
-> zaroori hain.** Bina unke 16 GB par bhi 500 concurrent nahi sambhalega.
-> Aur ek cheez sabse pehle: **database 3-6 GB/month badhega**, Neon free 1 GB hai.
+> **TL;DR:** aapke sawaal ke do jawab hain, kyunki "20,000" do cheezein ho sakti hain:
+>
+> | Sawaal | Emails/mo | **VPS** | Neon |
+> |---|---|---|---|
+> | 20,000 **emails/day** | 600k | **4 vCPU / 8 GB / 80 GB** | Free → Launch |
+> | 20,000 **customers** (=20,000 signups, 3% paid) | 20.4M | **8 vCPU / 16 GB / 320 GB** | **Scale $69** |
+> | 20,000 **paying** customers | **585M** | **~6 boxes / 48 vCPU** | **custom (3 TB)** |
+>
+> **Customer count matter nahi karta — email volume matter karta hai.** Aur VPS se pehle
+> **4 code changes** zaroori hain, warna bada box bhi nahi chalega. Sabse urgent:
+> **body retention** (20M emails/mo = 102 GB/month, Neon free 1 GB hai).
 
 ---
 
@@ -263,22 +271,166 @@ email body chahiye bhi nahi hota — sirf status (delivered/bounced) chahiye.
 
 ---
 
-## 6. Agar 20,000 *tenants* hain (10M emails/month)
+## 6. Saat scale — 20,000 se 500,000 customers
 
-Numbers 17x ho jate hain:
+"20,000 customers" bolne ka matlab ho sakta hai: 20,000 **signups** ya 20,000
+**paying**. Dono ka load bahut alag hai. Neeche dono, aur beech ka bhi:
 
-| | 20k emails/day | 10M emails/month |
+**Assumptions:** paid customer 28,400 emails/mo · free user 600/mo · 3% paid conversion ·
+peak = average ka 3x, burst = 5x · body 5 KB
+
+| | Free | Paid | Emails/mo | **Avg/s** | **Peak/s** | **Burst 5m/s** | SES $ | DB/mo | **VPS** | Neon |
+|---|---|---|---|---|---|---|---|---|---|---|
+| A. 20k signup | 19,400 | 600 | 20.4M | 8 | **24** | 40 | $2,040 | 100 GB | **8 vCPU / 16 GB / 320 GB** | Scale $69 |
+| B. 20k paying | 646,667 | 20,000 | **585M** | 226 | **677** | 1,130 | **$58,466** | **3 TB** | **48 vCPU / 192 GB (~6 boxes)** | **custom** |
+| C. 20k × 20 = 400k | 13M | 400k | 11.7B | 4,500 | **13,500** | 22,500 | **$1.17M** | 60 TB | **~600 vCPU** | **custom** |
+
+> **B par dhyan do:** 585 million emails/month = **SES ka $58,000/mo bill**.
+> Ye ek VPS ka sawaal nahi, ye ek **company** ka sawaal hai.
+
+### B ke liye asli numbers
+
+| Cheez | Kitna |
+|---|---|
+| Emails/month | **585 million** |
+| Emails/day | 19.5 million |
+| Emails/second peak | **677** |
+| SES bill | **$58,466/mo** (₹52 lakh) |
+| Revenue (20k × $19.30) | $386,000/mo |
+| SES = revenue ka | **15%** |
+| DB storage/month | **3 TB** |
+| VPS boxes | **~6** (ya managed platform) |
+
+**Sabse bada bottleneck: SES ka rate limit.** Default production rate **14/sec** hai.
+Aapko **~1,200/sec** chahiye — matlab AWS se **dedicated IP + custom rate limit** maangna
+padega, aur ye automatic nahi milta.
+
+---
+
+## 6b. ⚠️ Teen cheezein jo 20,000 customers par **toot** jati hain
+
+Ye code ke hisaab se nikalti hain, andaaze se nahi.
+
+### #1 Neon connection limit — 5 users par hi
+
+`app/config.py` ka default: `POOL_SIZE=5 + MAX_OVERFLOW=10` = **15 connections per process**.
+
+```
+4 uvicorn workers × 15  = 60
+2 outbox workers × 15   = 30
+                          ────
+                           90 connections — API pool
++ migrations, psql, monitoring ≈ 100
+```
+
+| Neon plan | Connection limit | 100 connections? |
 |---|---|---|
-| Emails/second (peak) | 0.7 | **17** |
-| SES bill | $60/mo | **$1,000/mo** |
-| DB growth | 3 GB/mo | **50 GB/mo** |
-| VPS | 4 vCPU / 8 GB | **8 vCPU / 16 GB** ya 2 boxes |
-| Workers needed | 2 | **6+** |
-| SES rate limit | 14/s default | **isliye aur maango** |
-| Neon | Free / Launch | **Scale ($69)** |
+| **Free** | ~100 (pooled) | ⚠️ edge par |
+| **Launch ($19)** | ~380 | ✅ |
+| **Scale ($69)** | ~680 | ✅ |
+| 500k customers | 3,000+ | ❌ **custom / PgBouncer zaroori** |
 
-10M/month par **SES ka rate limit hi bottleneck** ban jayega (17/s chahiye, default 14/s).
-Production access ke waqt `10,000/day` nahi, **50,000/day + 50/s** maango.
+**Isliye:** 20,000 customers par **Neon Launch minimum**. Aur connection count ko
+**monitor** karo — ye pehli cheez hai jo 500 users ke baad tootegi.
+
+### #2 Email body storage — 3 mahine, phir bill
+
+Har email ka **poora body** DB mein rehta hai, forever (`app/models/delivery.py`
+line 70-71: `text_body`, `html_body` — `Text` type).
+
+```
+20.4M emails/mo × 5 KB = 102 GB/month
+```
+
+| Neon plan | Storage | Kitne din |
+|---|---|---|
+| Free | 1 GB | **8 ghante** 🔴 |
+| Launch | 10 GB | **3 din** 🔴 |
+| Scale | 50 GB | **15 din** 🔴 |
+
+**Koi bhi Neon plan kaafi nahi hai.** Options:
+
+| Option | Effort | Result |
+|---|---|---|
+| **A. Retention: 7 din baad body NULL** | chhota migration + cron | 102 GB → **~0**, sirf metadata |
+| B. S3 archive (body → S3, pointer DB mein) | medium | DB ~small, S3 $0.023/GB |
+| C. Sirf metadata | easy | dashboard preview nahi banega |
+
+**Recommendation: A abhi (7 din), B jab 5,000+ customers ho.**
+S3 par 102 GB = **$2.35/month** vs Neon storage (bahut zyada). Long-term S3 hi sahi hai.
+
+### #3 Per-tenant queries — 20,000 ke saath
+
+`GET /v1/emails` `organization_id` par filter karta hai, aur `ix_email_org_created`
+index hai ✅. **Ye theek hai.**
+
+Magar **dashboard** (Phase 9) mein aggregate queries aayengi:
+```sql
+SELECT organization_id, count(*), sum(CASE WHEN status='delivered' ...)
+FROM email_messages
+WHERE created_at >= now() - interval '30 days'
+GROUP BY organization_id;
+```
+20M rows par ye **seconds** lega, aur DB CPU kha jayega. **Fix:** `usage_daily`
+rollup table (migration `0005` mein already planned hai) — raw rows par aggregate
+kabhi mat chalao.
+
+---
+
+## 6c. Jab scale aaye to — kya, kab
+
+| Customers | Emails/mo | VPS | Neon | **Naya kya lagega** |
+|---|---|---|---|---|
+| 1,000 | 2M | 4 vCPU / 8 GB | Free→Launch | — |
+| **20,000** | 20M | **8 vCPU / 16 GB** | Scale $69 | body retention, usage rollup |
+| 50,000 | 51M | 16 vCPU / 32 GB | Scale | S3 archive, 2 boxes + LB |
+| **200,000** | 204M | ~24 vCPU / 96 GB | custom | **PgBouncer**, Redis cache, managed LB |
+| **500,000** | 585M | **~48 vCPU / 192 GB** | custom (3 TB) | **SES rate limit ↑**, sharding ya managed (AWS ECS/RDS) |
+
+### 500,000 par honest baat
+
+Is scale par **apna VPS manage karna galat faisla** ban jata hai:
+
+| Aapko manage karna padega | Kitna kaam |
+|---|---|
+| Multi-box deploy + load balancer | manual/Ansible |
+| DB connection pooling (PgBouncer) | alag service |
+| Log aggregation | alag service |
+| Zero-downtime deploy | CI/CD |
+| 3 TB DB backup | scripted |
+| Monitoring + paging | on-call |
+
+**$58k/mo SES bill ke saamne** managed platform (AWS ECS + RDS, ya Fly.io/Render)
+ka $2,000-4,000/mo **sasta padta hai** — kyunki aapka time bhi paisa hai.
+
+**Nateeja:** 20,000 tak khud manage karo. Uske baad managed par shift karo.
+
+---
+
+## 6d. SES ka rate limit — 20,000 customers ka asli gate
+
+Ye **AWS ka** limit hai, code ka nahi:
+
+| Stage | Daily quota | Rate |
+|---|---|---|
+| Sandbox | 200 | 1/sec |
+| Production (default) | 50,000 | **14/sec** |
+| Production (warmed up) | 200,000+ | 15-20/sec |
+| 20k customers (20M/mo) | — | **24/sec peak chahiye** |
+| 20k **paying** (585M/mo) | — | **677/sec chahiye** |
+
+**14/sec default se 24/sec bhi nahi milta.** Isliye:
+
+1. Production access maangte waqt **50,000/day + 50/sec** maango (default se zyada —
+   form mein justify karo: "we resell transactional email to verified-domain tenants").
+2. **Dedicated IP ($25/mo)** par shift karo — shared IP pool ka rate aapke control mein nahi.
+3. Bade scale par AWS ko **custom rate limit** ke liye alag ticket.
+
+⚠️ **SES quota aur rate limit alag cheezein hain.** Quota = "kitne emails ek din mein",
+rate = "kitne ek second mein". Dono badhane padte hain.
+
+**Fallback plan:** SES ko **2 accounts** mein split karo (transactional + marketing,
+jo already planned hai) — ye quota 2x kar deta hai.
 
 ---
 
