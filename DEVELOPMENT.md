@@ -199,7 +199,8 @@ The current Starlette release emits a deprecation warning when its `TestClient` 
 [docs/PRICING-ANALYSIS.md](docs/PRICING-ANALYSIS.md),
 [docs/UNIT-ECONOMICS.md](docs/UNIT-ECONOMICS.md),
 [docs/PAYMENTS-TAX-FREETIER.md](docs/PAYMENTS-TAX-FREETIER.md),
-[docs/SES-TEST-GUIDE.md](docs/SES-TEST-GUIDE.md) and
+[docs/SES-TEST-GUIDE.md](docs/SES-TEST-GUIDE.md),
+[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) and
 [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) for scope, limitations and sequencing.
 Do not treat these phases as implemented.
 
