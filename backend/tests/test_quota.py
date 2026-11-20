@@ -21,7 +21,12 @@ from test_auth import login, register
 from app.models.delivery import EmailMessage, OutboxEvent
 from app.models.identity import User
 from app.models.organization import Organization
-from app.models.quota import RecipientDailyCount, SendingPlan, UsageDaily
+from app.models.quota import (
+    DEFAULT_PLANS,
+    RecipientDailyCount,
+    SendingPlan,
+    UsageDaily,
+)
 from app.security.passwords import hash_password
 from app.services.organizations import add_organization_with_owner
 from app.services.quota import (
@@ -381,3 +386,24 @@ def test_recipient_digest_is_stable_and_case_insensitive():
     assert recipient_digest("  Victim@Example.COM ") == recipient_digest("victim@example.com")
     assert recipient_digest("a@example.com") != recipient_digest("b@example.com")
     assert len(recipient_digest("a@example.com")) == 64
+
+
+def test_every_paid_plan_can_afford_its_own_worst_case():
+    """A customer who maxes a plan must not cost more than the plan can pay for.
+
+    Quota is enforced per day, so daily x 30 is the monthly ceiling. At $0.10 per
+    1,000 emails that is daily x 30 / 1000 x $0.10 of SES. If that ever exceeds the
+    price, the plan is a loss-making subscription and one heavy customer hurts more
+    than ten light ones help.
+    """
+    ses_per_email = 0.10 / 1_000
+    for plan in DEFAULT_PLANS:
+        cents = int(plan["price_cents_usd"])
+        if cents == 0:
+            continue
+        monthly_emails = int(plan["daily_email_limit"]) * 30
+        ses_cost = monthly_emails * ses_per_email
+        assert ses_cost <= cents / 100, (
+            f"{plan['slug']}: {monthly_emails:,} emails/month costs "
+            f"${ses_cost:.2f} of SES but the plan only earns ${cents / 100:.2f}"
+        )

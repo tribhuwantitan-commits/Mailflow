@@ -138,9 +138,7 @@ def clear_expired_event_payloads(
         ).all()
         if not ids:
             break
-        db.execute(
-            update(DeliveryEvent).where(DeliveryEvent.id.in_(ids)).values(payload=None)
-        )
+        db.execute(update(DeliveryEvent).where(DeliveryEvent.id.in_(ids)).values(payload=None))
         db.commit()
         cleared += len(ids)
         if len(ids) < batch:
