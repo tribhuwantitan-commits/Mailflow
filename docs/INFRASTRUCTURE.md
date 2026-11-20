@@ -400,6 +400,85 @@ Revenue $579 (30 paid × $19.30) → **profitable**.
 
 ---
 
+## 8b. Production monthly cost — stage by stage
+
+Ye poora bill hai. Har stage par: kitne customers, kitne emails, kya kharcha.
+
+**Assumptions (UNIT-ECONOMICS.md se):**
+- Paid customer average **28,400 emails/month** (ARPU $19.30 ka tier mix)
+- Free user average **600 emails/month** (1,500 quota × 40% utilization)
+- SES **$0.10/1K** (à la carte — Essentials ho to $0.16)
+- VPS price badhta hai jab load badhe (2 GB → 4 GB → multiple boxes)
+
+| Stage | Free | Paid | Emails/mo | SES | SNS+SQS | Neon | VPS | Domain | Support | **Total** |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **0. Aaj (test)** | 0 | 0 | ~500 | $0.05 | $0 | $0 | $20 | $1 | $0 | **$21** |
+| **1. Pehla paying customer** | 10 | 1 | 34k | $3 | $0 | $0 | $20 | $1 | $0 | **$24** |
+| **2. Chhota** | 100 | 5 | 202k | $20 | $0 | $0 | $20 | $1 | $0 | **$41** |
+| **3. Traction** | 500 | 25 | 1.0M | $101 | $2 | $0 | $20 | $1 | $50 | **$174** |
+| **4. Growing** | 1,000 | 50 | 2.0M | $202 | $1 | $0 | $20 | $1 | $50 | **$274** |
+| **5. Serious** | 4,000 | 500 | 16.6M | $1,660 | $60 | $19 | $40 | $1 | $600 | **$2,380** |
+| **6. Scale** | 15,000 | 2,000 | 65.8M | $6,580 | $240 | $69 | $150 | $1 | $1,800 | **$8,839** |
+
+### Us kharcha ke saamne revenue
+
+| Stage | Gross revenue | GST+gateway (−20.4%) | Cost | **Contribution** | Margin |
+|---|---|---|---|---|---|
+| 0 | $0 | $0 | $21 | **−$21** | — |
+| 1 | $19 | −$4 | $24 | **−$9** | — |
+| 2 | $97 | −$20 | $41 | **+$36** | 37% |
+| 3 | $483 | −$99 | $174 | **+$210** | 43% |
+| 4 | $965 | −$197 | $274 | **+$494** | 51% |
+| 5 | $9,650 | −$1,969 | $2,380 | **+$5,301** | 55% |
+| 6 | $38,600 | −$7,874 | $8,839 | **+$21,887** | 57% |
+
+### Teen baatein jo is table se nikalti hain
+
+1. **Break-even sirf 2 paid customers par** hai (VPS $20 + domain $1 = $21 fixed). Stage 2
+   (5 paid) par tum profit mein ho.
+2. **Stage 1 par chhota loss** (−$9) hai — ye normal hai, kyunki VPS poora tum bhar rahe ho
+   aur ek customer se sirf $19 aata hai. 2 customers par break-even.
+3. **Cost ka 75-90% SES hai** bade volume par. VPS ka hissa girta jata hai. Isliye SES
+   rate ($0.10 vs $0.16, à la carte vs Essentials) **sabse bada** lever hai.
+
+### Jo table mein nahi hai (optional / later)
+
+| Cheez | Kab | Monthly |
+|---|---|---|
+| **SES dedicated IP** | 250k+ emails/day, ya deliverability issue | **+$25** |
+| **Neon paid** (1 GB cross) | ~10,000+ users | +$19 |
+| **Cloudflare Pro** | optional | +$20 |
+| **Sentry / error tracking** | 500+ customers | +$26 |
+| **Marketing** (ads, content) | launch ke baad | tumhara call |
+| **LLM tokens** (Agent feature) | jab agent ship karo | variable, per-plan quota |
+
+### ⚠️ Sabse sasta production setup — exact
+
+| Cheez | Kya | Monthly |
+|---|---|---|
+| VPS | aapka existing Windows Server | **already paid** |
+| Neon | free tier | **$0** |
+| SES | à la carte, 4,000 emails/mo | **$0.40** |
+| SNS + SQS | free tier | **$0** |
+| Domain | already | **$0** |
+| **AWS ka extra bill** | | **~$0.50-2** |
+| **Total incremental** | | **₹50-170/mo** |
+
+Matlab: **production par jaane ka asli kharcha lagbhag kuch nahi hai.** Paisa tab
+lagta hai jab emails badhte hain — aur wo kharcha revenue ke saath badhta hai.
+
+### ⚠️ Do chhupi hui fees
+
+| Fee | Kitna | Kab |
+|---|---|---|
+| **Forex markup** AWS bill par (Indian card) | **3-3.5%** | har mahine; INR billing enable karo to bach jayega |
+| **GST on AWS** (Indian billing address) | **18%** | AWS India invoice par; ye input credit mil jata hai agar tum GST-registered ho |
+
+$21 ka bill par forex markup ~$0.70. Chhota, magar ignore mat karo — bade bills par
+$8,839 × 3.5% = **$309/month**.
+
+---
+
 ## 9. Kaam ka order — exact
 
 ### Aaj (Phase 6.5 — SES test)
