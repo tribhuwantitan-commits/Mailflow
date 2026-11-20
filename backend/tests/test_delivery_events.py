@@ -28,7 +28,11 @@ from app.services.delivery_events import (
     suppressed_recipients,
     unwrap_sns,
 )
-from app.services.maintenance import clear_expired_bodies, purge_counters
+from app.services.maintenance import (
+    clear_expired_bodies,
+    clear_expired_event_payloads,
+    purge_counters,
+)
 from app.services.outbox import process_due
 
 PAYLOAD = {
@@ -524,6 +528,57 @@ def test_recent_bodies_are_kept(client, database_engine):
     with factory() as db:
         assert clear_expired_bodies(db, retention_days=30) == 0
         assert db.get(EmailMessage, email_id).text_body == "Hello there"
+
+
+def test_event_payloads_are_cleared_but_the_timeline_survives(client, database_engine):
+    tenant, email_id, provider_id = send_one(client, database_engine)
+    factory = client.app.state.session_factory
+    with factory() as db:
+        ingest(
+            db,
+            ses_event(
+                event_type="Delivery",
+                message_id=provider_id,
+                recipients=("receiver@example.com",),
+                sns_message_id="payload-1",
+            ),
+        )
+        db.commit()
+        event = db.scalars(select(DeliveryEvent)).one()
+        event.received_at = datetime.now(UTC) - timedelta(days=30)
+        db.commit()
+
+        assert clear_expired_event_payloads(db, retention_days=7) == 1
+
+    with factory() as db:
+        event = db.scalars(select(DeliveryEvent)).one()
+        # The payload is what costs the storage; everything a timeline needs stays.
+        assert event.payload is None
+        assert event.event_type == "Delivery"
+        assert event.recipient == "receiver@example.com"
+        assert event.provider_event_id == "payload-1"
+
+    response = client.get(f"/v1/emails/{email_id}/events", headers=tenant["headers"])
+    assert response.status_code == 200
+    assert [item["type"] for item in response.json()["events"]] == ["Delivery"]
+
+
+def test_recent_event_payloads_are_kept(client, database_engine):
+    _, _, provider_id = send_one(client, database_engine)
+    factory = client.app.state.session_factory
+    with factory() as db:
+        ingest(
+            db,
+            ses_event(
+                event_type="Delivery",
+                message_id=provider_id,
+                recipients=("receiver@example.com",),
+                sns_message_id="payload-2",
+            ),
+        )
+        db.commit()
+        assert clear_expired_event_payloads(db, retention_days=7) == 0
+        assert db.scalars(select(DeliveryEvent)).one().payload is not None
 
 
 def test_counter_purge_respects_each_window(client, database_engine):

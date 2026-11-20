@@ -366,6 +366,159 @@ Lightsail console → instance → **Snapshots** → Create.
 
 ---
 
+## 12b. Storage aur CPU — asli ginti
+
+### Pehle ek galat-fehmi door karo
+
+| | Kya hai |
+|---|---|
+| **2 GB** | **RAM** (memory), disk nahi |
+| Disk | Lightsail PG 2 GB plan par **80 GB SSD** |
+
+"2 GB mein kitne email" ka jawab do alag sawaalon mein banta hai:
+**(a) kitne bhej sakte ho** (RAM/CPU) aur **(b) kitne store ho sakte hain** (disk).
+
+---
+
+### (a) Kitne bhej sakte ho — RAM/CPU se
+
+DB par har send ka kharcha:
+
+| Kaam | Time |
+|---|---|
+| Quota `UPDATE` (locked) | ~1.5 ms |
+| `email_messages` insert | ~1 ms |
+| `outbox_events` insert | ~1 ms |
+| **Total per email** | **~3.5 ms** |
+
+14 emails/sec par: 14 × 3.5 ms = **4.9% ek core ka**.
+Events (42/sec) + dashboard reads mila kar ~**15% ek core**.
+
+**2 GB RAM DB yahan bilkul aaram mein hai.** 14/sec = **12 lakh emails/din** bhej sakta
+hai — RAM se limit nahi hota, SES quota se hota hai.
+
+**Asli RAM kharcha API server par hai, DB par nahi:**
+
+```
+4 API workers × 90 MB          = 360 MB
+2 background workers × 70 MB   = 140 MB
++ OS (Ubuntu)                  = 350 MB
++ argon2 login (64 MB peak each, kuch second)
+                               ─────────
+                                ~0.9 GB baseline
+```
+
+4 GB server par 4 concurrent logins bhi aaram se. **Server 4 GB kaafi hai.**
+
+---
+
+### (b) Kitne store ho sakte hain — disk se
+
+Ye hisaab **schema se** nikala hai, andaaza nahi:
+
+| Cheez | Per email | Retention |
+|---|---|---|
+| `email_messages` row + indexes | ~0.7 KB | permanent |
+| `delivery_events` (~3 events) | ~0.75 KB | permanent |
+| **Permanent total** | **~1.5 KB/email** | — |
+| Body (text + html) | ~8 KB | **30 din** |
+| Raw SES payload (3 events) | ~3.3 KB | **7 din** ✅ naya |
+
+> **Payload retention isi commit mein add kiya.** Raw SES payload har event ka **~1.3 KB**
+> hota hai — jo table ka 88% hai, aur ek hafte baad koi nahi padhta. 7 din baad null ho
+> jata hai; timeline ke saare columns bache rehte hain. **Disk 7x kam.**
+
+### 80 GB disk par kitna aayega
+
+Postgres WAL + bloat + autovacuum ke liye **40-50% khaali** chhodna zaroori hai.
+Usable maano **40 GB**.
+
+| Roz | Body (30 din) | Permanent/maheena | **Kaafi hai?** |
+|---|---|---|---|
+| **10,000** | 2.4 GB | 0.45 GB | ✅ **saalon** (3+ saal) |
+| **25,000** | 6 GB | 1.1 GB | ✅ **2 saal+** |
+| **50,000** | 12 GB | 2.2 GB | ✅ ~1.5 saal |
+| **100,000** | 24 GB | 4.5 GB | ⚠️ ~1 saal, body retention **14 din** karo |
+| **400,000** | **96 GB** | 18 GB | ❌ **disk phat jayega** |
+
+### Yaad rakhne wali line
+
+> **80 GB disk = ~2.5 crore emails permanent.** Bleed body storage se hota hai, rows se nahi.
+>
+> **25,000 emails/din tak 2 GB plan bilkul theek hai.** Aap wahan abhi nahi ho.
+
+### 100k+/din par kya karo (jab waqt aaye)
+
+| Raasta | Kya | Cost |
+|---|---|---|
+| A | Body retention 30 → **7 din** | $0, ek line |
+| B | Bodies **S3** mein rakho, DB mein sirf metadata | +$2/mo, 96 GB ke liye |
+| C | DB plan 4 GB (**120 GB disk**) | +$30/mo |
+
+**A ya B pehle try karo.** C sabse aakhir mein.
+
+---
+
+### CPU — 4 vCPU / 6 / 8 chahiye ya nahi?
+
+**Nahi. 2 vCPU kaafi hai.** Magar ek chhupi hui baat samajhni zaroori hai:
+
+**Lightsail burstable hai.** "2 vCPU" ka matlab do poore cores nahi:
+
+| Plan | vCPU | Baseline | **Sustained milta hai** | Burst |
+|---|---|---|---|---|
+| $12 (2 GB) | 2 | 20% | 0.4 core | 2 core tak |
+| **$24 (4 GB)** | **2** | **20%** | **0.4 core** | **2 core tak** |
+| $44 (8 GB) | 2 | 30% | 0.6 core | 2 core tak |
+| $84 (16 GB) | 4 | 40% | 1.6 core | 4 core tak |
+| $164 (32 GB) | 8 | 40% | 3.2 core | 8 core tak |
+
+Aapko **0.15 core** chahiye. $24 plan **0.4 core sustained** deta hai — **2.6x zyada**.
+Aur spikes ke liye poore **2 core** tak burst kar sakta hai. **Bilkul sahi shape.**
+
+### 8 vCPU lene ka asli matlab
+
+| Plan | $/mo | Aapka $75 budget |
+|---|---|---|
+| 2 vCPU / 4 GB | **$24** | ✅ pura mahina |
+| 4 vCPU / 16 GB | $84 | ❌ budget khatam, DB ke paise nahi bache |
+| **8 vCPU / 32 GB** | **$164** | ❌ **2 mahine ka poora budget ek mahine mein** |
+
+Aapko 8 vCPU se **20x zyada** milta hai jo chahiye. Wo paisa SES aur DB mein lagao.
+
+### CPU kab badhana hai (signal)
+
+Lightsail console mein CPU graph dekho — **"sustainable" zone** ke upar rehna chahiye.
+Agar lagatar (ghanton) upar jaye:
+
+| Signal | Kya karo |
+|---|---|
+| CPU 20% baseline par chipak raha, burst khatam | Server upgrade $44 (8 GB) — **1 click, 2 min reboot** |
+| Wahi phir bhi | Workers 4 → 2 karo, phir dekho |
+| Ab bhi | Tab 4 vCPU ($84) |
+
+**Upgrade one-click hai, rebuild nahi.** Isliye bada kharid ke shuru mat karo —
+chhote se shuru karo, signal aaye to badhao.
+
+---
+
+### Final recommendation — aapke volume ke hisaab se
+
+| Roz | DB plan | Server | $/mo |
+|---|---|---|---|
+| **≤ 25,000** | PG **2 GB** — $30 | **4 GB / 2 vCPU** — $24 | **$54** ✅ |
+| 25k–100k | PG **4 GB** — $60 | 4 GB — $24 | $84 |
+| 100k+ | PG **8 GB** — $115 | 8 GB — $44 | $159 |
+
+**Aap "≤ 25,000" wale row mein ho.** $54/mo, aur mahine ke baaki $21 credits mein
+rehte hain.
+
+> **Ek aur option:** credits khatam hone ke baad managed DB ($30) hata kar Postgres
+> **usi server par** chala sakte ho — total **$24/mo**. Tab backup khud lena padega
+> (roz `pg_dump` → S3). Beginner ke liye abhi nahi, par $0 ka raasta hai.
+
+---
+
 ## 13. Monthly bill kaise dekhein
 
 Billing → **Cost Explorer** → Group by **Service**.

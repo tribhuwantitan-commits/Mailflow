@@ -37,11 +37,17 @@ USAGE_RETENTION_DAYS = 90
 REPUTATION_RETENTION_DAYS = 90
 #: The audit trail is the thing support reads when a customer says "I never got it".
 DELIVERY_EVENT_RETENTION_DAYS = 90
+#: The raw SES payload is ~1.3 KB of the ~1.5 KB each event row occupies. Nobody reads
+#: it after the first week -- it exists so a parsing bug is recoverable without
+#: re-subscribing to the topic. Nulling it takes the table from ~22 GB/month down to
+#: ~3 GB/month at 400k sends/day while keeping the timeline intact.
+EVENT_PAYLOAD_RETENTION_DAYS = 7
 
 
 @dataclass
 class CleanupResult:
     bodies_cleared: int = 0
+    payloads_cleared: int = 0
     usage_deleted: int = 0
     recipient_counts_deleted: int = 0
     reputation_deleted: int = 0
@@ -51,6 +57,7 @@ class CleanupResult:
         return any(
             (
                 self.bodies_cleared,
+                self.payloads_cleared,
                 self.usage_deleted,
                 self.recipient_counts_deleted,
                 self.reputation_deleted,
@@ -115,6 +122,32 @@ def clear_expired_bodies(
     return cleared
 
 
+def clear_expired_event_payloads(
+    db: Session, *, retention_days: int, batch: int = 1000, now: datetime | None = None
+) -> int:
+    """Null the raw SES payload on old events, keeping every column a timeline needs."""
+    if retention_days <= 0:
+        return 0
+    cutoff = (now or datetime.now(UTC)) - timedelta(days=retention_days)
+    cleared = 0
+    while True:
+        ids = db.scalars(
+            select(DeliveryEvent.id)
+            .where(DeliveryEvent.received_at < cutoff, DeliveryEvent.payload.is_not(None))
+            .limit(batch)
+        ).all()
+        if not ids:
+            break
+        db.execute(
+            update(DeliveryEvent).where(DeliveryEvent.id.in_(ids)).values(payload=None)
+        )
+        db.commit()
+        cleared += len(ids)
+        if len(ids) < batch:
+            break
+    return cleared
+
+
 def purge_counters(db: Session, *, batch: int = 5000, today: date | None = None) -> CleanupResult:
     """Delete counter and audit rows past their retention windows."""
     current = today or datetime.now(UTC).date()
@@ -161,6 +194,9 @@ def run(
     result.bodies_cleared = clear_expired_bodies(
         db, retention_days=body_retention_days, batch=batch
     )
+    result.payloads_cleared = clear_expired_event_payloads(
+        db, retention_days=EVENT_PAYLOAD_RETENTION_DAYS, batch=batch
+    )
     return result
 
 
@@ -188,9 +224,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.dry_run:
             logger.info(
-                "maintenance_windows bodies=%dd usage=%dd recipient_counts=%dd "
-                "reputation=%dd delivery_events=%dd",
+                "maintenance_windows bodies=%dd event_payloads=%dd usage=%dd "
+                "recipient_counts=%dd reputation=%dd delivery_events=%dd",
                 settings.email_body_retention_days,
+                EVENT_PAYLOAD_RETENTION_DAYS,
                 USAGE_RETENTION_DAYS,
                 RECIPIENT_COUNT_RETENTION_DAYS,
                 REPUTATION_RETENTION_DAYS,
