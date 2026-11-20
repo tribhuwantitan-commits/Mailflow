@@ -810,6 +810,30 @@ magar $50/mo bachana 2 paid customers ka poora contribution hai.
 
 ---
 
+## 7d. OS choice — Ubuntu, not Windows
+
+Repo code **OS-independent** hai (`win32`/`WindowsPath`/`ntpath` — kuch nahi), to ye
+sirf hosting ka faisla hai, migration ka nahi.
+
+Windows do jagah mehnga padta hai:
+
+| | Ubuntu 24.04 | Windows Server 2022 |
+|---|---|---|
+| Idle RAM | ~350 MB | ~1,500 MB |
+| Lightsail 4 GB / 2 vCPU | **$24** | $44 |
+| Lightsail 8 GB / 2 vCPU | $44 | $74 |
+| Docker | native | Desktop **unsupported** |
+| Auto-restart | `systemd` (10-line unit) | NSSM |
+
+Windows par app ke liye 8 GB chahiye ($74). Ubuntu par **4 GB kaafi hai ($24)** — phir
+bhi zyada khaali RAM bachti hai. **$50/mo ka farq.**
+
+RDP ki jagah vs-code Remote-SSH — poora file tree, editor, terminal, sab wahi.
+
+Detail: `AWS-ONLY-PLAN.md`.
+
+---
+
 ## 8. Ek line ka verdict
 
 > **VPS ka rishta email volume se nahi, *concurrency* aur *peak rate* se hai.**

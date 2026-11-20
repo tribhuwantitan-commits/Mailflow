@@ -1,131 +1,207 @@
 # AWS-only plan — 2 to 4 months, credits se, Neon hata kar
 
-Decision: **2-4 mahine tak sab kuch AWS par.** Windows server + managed Postgres dono
-AWS se. Neon nahi. Budget ~$75/mo. Kharcha AWS credits se.
+Decision: **2-4 mahine tak sab kuch AWS par.** Server + managed Postgres dono AWS se.
+Neon nahi. Budget ~$75/mo. Kharcha AWS credits se.
 
-Ye doc sirf **is window** ke liye hai. 4 mahine baad revenue aaye to `VPS-SIZING.md`
-wala sasta model (VPS + managed DB) dobara dekhna — table §8 mein hai.
+**OS: Ubuntu 24.04 LTS.** Windows nahi — §1 mein hisaab hai.
 
 ---
 
-## 0. Teen sach, jo pehle pata hone chahiye
+## 0. Pehle: code change chahiye kya? Nahi.
 
-| # | Sach | Matlab |
+Repo check kiya — `backend/app` aur `backend/tests` mein **ek bhi** OS-specific line nahi:
+
+| Cheez | Windows-specific? |
+|---|---|
+| `win32`, `WindowsPath`, `ntpath` | ❌ kuch nahi |
+| Hardcoded paths | ❌ kuch nahi |
+| Platform-specific deps | ❌ kuch nahi (pure Python + psycopg + uvicorn) |
+| Tests | ❌ kuch nahi |
+
+**Matlab: migration = sirf naya server + `.env`.** Code ko haath lagane ki zaroorat nahi.
+143 tests Linux par waise hi pass honge.
+
+> Note: `docs/PHASE-7C-EVENTS.md` etc. mein PowerShell commands hain
+> (`.venv\Scripts\python.exe`). Wo sirf **commands** hain, code nahi. Translation table
+> §7 mein hai.
+
+---
+
+## 1. Windows kyun mehnga tha — do jagah se
+
+Windows par **do baar** pay karna padta hai: licence mein, aur RAM mein.
+
+### (a) Licence
+
+| | Linux | Windows | Farq |
+|---|---|---|---|
+| Lightsail 8 GB / 2 vCPU | **$44** | **$74** | **+$30/mo** |
+| Lightsail 16 GB / 4 vCPU | $84 | $124 | +$40/mo |
+| Lightsail 4 GB / 2 vCPU | **$24** | **$44** | **+$20/mo** |
+
+### (b) RAM — asli chhupa hua kharcha
+
+| | Idle RAM jo OS khaata hai |
+|---|---|
+| Ubuntu 24.04 | **~350 MB** |
+| Windows Server 2022 | **~1,500 MB** |
+
+Aapka app (4 API workers + 3 background process) ~1.1 GB leta hai. To:
+
+| Server | Linux par bacha | Windows par bacha |
 |---|---|---|
-| 1 | **Windows licence Linux se ~2x mehnga hai** | Gemini ka `t4g` (Graviton) plan **Windows par exist hi nahi karta** — arm64 hai |
-| 2 | **Lightsail ka apna VPC hai, RDS se peer nahi hota** | Set up ke waqt network choose karna hoga, warna DB "unreachable" dikhega |
-| 3 | **1 GB managed DB par encryption at rest nahi** | $15 plan par nahi, $30 (2 GB) se shuru. Email = PII |
+| 4 GB | 4.0 − 0.35 − 1.1 = **2.5 GB free** ✅ | 4.0 − 1.5 − 1.1 = **1.4 GB free** ⚠️ |
+| 8 GB | bahut aaram | 5.4 GB ✅ |
 
-Teesra point important hai: testing ke waqt theek hai, **asli customer data se pehle** $30
-plan par jaana.
+**Isliye Windows par 8 GB chahiye tha ($74).** Linux par **4 GB kaafi hai ($24)** —
+aur phir bhi zyada khaali RAM bachti hai.
+
+**Yahi asli farq hai: $50/mo, ya 68% sasta.**
 
 ---
 
-## 1. Teen options — asli price (Nov 2026, Mumbai)
+## 2. Teen options — asli price (Nov 2026, Mumbai)
 
-### Option A — Recommended: Lightsail Windows + Lightsail Postgres
+### ✅ Option A — Recommended: Lightsail Linux 4 GB + PG 2 GB
 
 | Cheez | Plan | $/mo | ₹/mo |
 |---|---|---|---|
-| Windows server | Lightsail **8 GB** / 2 vCPU / 160 GB SSD | **$74** | ₹6,500 |
-| PostgreSQL | Lightsail **1 GB** managed | **$15** | ₹1,300 |
-| SES | 50k emails test ke liye | ~$5 | ₹450 |
-| **Total** | | **~$94** | **~₹8,250** |
+| Server | Lightsail **Ubuntu 24.04, 4 GB / 2 vCPU / 80 GB** | **$24** | ₹2,100 |
+| PostgreSQL | Lightsail **2 GB managed** (encryption ✅) | **$30** | ₹2,650 |
+| SES | ~50k emails | ~$3 | ₹270 |
+| SNS + SQS | Phase 7c pipeline | <$1 | ₹60 |
+| **Total** | | **~$57** | **~₹5,050** |
 
-**Windows licence bundle mein hai** — alag nahi lagta. Static IP, 2.5 TB transfer
-(Mumbai mein half), RDP browser se — sab included.
+Static IP, 4 TB transfer (Mumbai mein 2 TB), snapshots alag se — sab included.
 
-**Budget mode (tight):** Windows **4 GB** ($44) + PG 1 GB ($15) = **$59/mo**.
-Magar 4 GB par Windows khud ~1.5 GB khaata hai. API ke 4 workers + 2 background workers
-ke saath ye **OOM ke bilkul kinare** hai. Raat 3 baje server mar jaye — beginner ke liye
-sabse bura outcome. Isliye 8 GB recommend karta hoon.
+### Option B — Sabse sasta, testing ke liye
 
-### Option B — Gemini ka plan, Windows ke saath (sach mein kitna)
+| Cheez | Plan | $/mo |
+|---|---|---|
+| Server | Lightsail Linux **2 GB** | $12 |
+| PostgreSQL | Lightsail **1 GB** (encryption ❌) | $15 |
+| SES | ~$3 | $3 |
+| **Total** | | **~$30** (₹2,650) |
 
-| Cheez | $/mo |
-|---|---|
-| EC2 **t3.medium** Windows (2 vCPU / 4 GB) | **~$100** |
-| RDS db.t4g.small + 50 GB | ~$37 |
-| Redis (ElastiCache) | ~$15 |
-| **Total** | **~$152** |
+Sirf pehle 1-2 mahine, jab koi asli customer na ho. 2 GB par 2 API workers chalao, 4 nahi.
 
-Gemini ne `t4g.large` ka **Linux** price ($44) bataya (**asli $33**) aur usko Windows
-samajh liya. Windows par wahi 4 GB ka server **$100** hai.
-
-Aur Redis ki zaroorat nahi — already `outbox_events` queue hai (Phase 3).
-
-### Option C — $75 ke andar, sabse sasta
+### Option C — Windows (jo pehle plan kiya tha)
 
 | Cheez | $/mo |
 |---|---|
-| Lightsail Windows **4 GB** | $44 |
-| Lightsail PG 1 GB (encryption nahi) | $15 |
-| SES | ~$5 |
-| **Total** | **~$64** |
+| Lightsail Windows 8 GB | $74 |
+| Lightsail PG 1 GB | $15 |
+| SES | $3 |
+| **Total** | **~$92** |
 
-Chalega, magar 4 GB ka OOM risk aur no encryption. **Pehle 1-2 mahine testing ke liye
-theek**, asli customers ke saath nahi.
+**Option A se $35/mo zyada**, aur kam RAM. Koi fayda nahi — sirf GUI.
 
 ---
 
-## 2. Credits se kitne mahine
+## 3. Credits se kitne mahine — Linux ka asli faayda
 
-| Credit | Option A ($94) | Option B ($152) | Option C ($64) |
+| Credit | Option A ($57) | Option B ($30) | Option C Windows ($92) |
 |---|---|---|---|
-| $100 | 1 mahina | — | 1.5 mahine |
-| $500 | 5 mahine | 3 mahine | 7 mahine |
-| **$1,000** (Activate Founders) | **10 mahine** | 6 mahine | 15 mahine |
+| $100 | 1.7 mahina | 3.3 mahina | 1 mahina |
+| $500 | 8.7 mahine | 16 mahine | 5.4 mahine |
+| **$1,000** | **17 mahine** | 33 mahine | 10 mahine |
 
-**AWS Activate Founders** (self-funded, koi accelerator nahi chahiye) — **$1,000**,
-2 saal valid. Eligibility: pre-Series B, 10 saal se kam purani company, **Paid tier
-account**, aur ek **website** chahiye. Approval 5-10 business days.
+**Same $1,000 credits: Windows par 10 mahine, Linux par 17 mahine.**
 
-Lightsail, RDS, EC2, S3 — sab eligible hain. Ineligible: Marketplace, Route 53 **domain
-registration** fee, support plans, RI upfront fees.
+Aapko 2-4 mahine chahiye — matlab Linux par credits ka **13 mahine bacha** rahega
+revenue aane ke baad bhi.
 
-### ⚠️ Lightsail Windows par free tier bekaar hai
-
-3 mahine free tier **$22 tak ke Windows plan** par hai. Wo 2 GB ka plan hai. Windows
-Server akela 1.2-1.5 GB khaata hai — **API chalane ke liye kaafi nahi**. Isko mat
-count karo. (PG ka $15 plan 1 mahina free hai — wahi kaam aayega.)
+**AWS Activate Founders** (self-funded, accelerator nahi): $1,000, 2 saal valid.
+Chahiye: pre-Series B, 10 saal se chhoti company, **Paid tier account**, ek **website**.
+5-10 business days. Lightsail credits par chalta hai ✅.
 
 ---
 
-## 3. ⚠️ Setup ka sabse bada trap
+## 4. Linux ke aur faayde (paise ke alawa)
 
-**Lightsail instances ka apna VPC hota hai. RDS usme nahi hota.**
+| | Windows | Ubuntu |
+|---|---|---|
+| **Docker** | ❌ Windows Server par Docker Desktop **unsupported** | ✅ native `docker compose` — local dev + test asaan |
+| **Auto-restart on crash** | NSSM / Task Scheduler setup karna padta | ✅ `systemd` — 10 line ki file |
+| **Logs** | Event Viewer (dhundhna mushkil) | ✅ `journalctl -u mailflow` |
+| **Updates** | Reboot maangta hai, RDP band | ✅ `unattended-upgrades`, reboot kabhi bhi |
+| **Idle RAM** | 1.5 GB | 0.35 GB |
+| **Attack surface** | RDP port 3389 — bot attacks ka favourite | SSH key-only, port badal do |
+| **Session** | RDP toot jaye to kaam ruk gaya? | SSH toot jaye to **kaam chalta rehta hai** (tmux/systemd) |
+| **Boot time** | 60-90 s | 15-20 s |
+
+**Sabse bada practical faayda:** `systemd` se app crash ho to **10 second mein khud wapas
+aa jayega**. Windows par ye NSSM se karna padta hai aur woh bhi kabhi kabhi chup-chaap
+mar jaata hai.
+
+---
+
+## 5. Kya khoyenge — aur uska hal
+
+**Kho rahe hain:** RDP ka Windows desktop (GUI).
+
+**Hal: VS Code Remote-SSH.** Aapke Windows laptop par VS Code, usme remote server ka
+**poora folder tree, file editor, terminal** — bilkul jaise local ho. Beginner ke liye
+ye RDP se **behtar** hai, kyunki copy-paste saaf chalta hai aur file editing GUI se hoti hai.
+
+| Kaam | Windows (RDP) | Linux (Remote-SSH) |
+|---|---|---|
+| File edit | Notepad/RDP | VS Code, same jaisa local |
+| Terminal | PowerShell | VS Code ka built-in terminal |
+| File transfer | Drag-drop RDP | Drag-drop VS Code |
+| Restart app | Manual | `sudo systemctl restart mailflow` |
+
+**Setup time: 30 minute** (SSH key + VS Code extension). Iske baad sab normal lagta hai.
+
+---
+
+## 6. Command translation — Windows se Linux
+
+| Kaam | Windows | Ubuntu |
+|---|---|---|
+| venv activate | `.venv\Scripts\Activate.ps1` | `source .venv/bin/activate` |
+| Python chalao | `.venv\Scripts\python.exe` | `.venv/bin/python` |
+| Migration | `.venv\Scripts\python.exe -m alembic upgrade head` | `.venv/bin/python -m alembic upgrade head` |
+| Tests | `.venv\Scripts\python.exe -m pytest -q` | `.venv/bin/python -m pytest -q` |
+| API | `uvicorn app.main:app --port 8000` | `uvicorn app.main:app --host 0.0.0.0 --port 8000` |
+| Path separator | `\` | `/` |
+
+**Naya venv banana padega** (Windows ka venv Linux par nahi chalta):
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+---
+
+## 7. Lightsail ka VPC trap (dono OS par same)
+
+**Lightsail instance ka apna VPC hota hai. RDS usme nahi hota.**
 
 ```
 Lightsail VPC  ──✗ no peering──>  default VPC (RDS rehta hai)
 ```
 
-Isliye **do hi safe raaste hain:**
+Isliye **Lightsail liya to database bhi Lightsail ka**. Ye accha hai — $30 vs RDS $37-40,
+aur console mein ek hi jagah.
 
-| Raasta | Kya karo | Kab |
-|---|---|---|
-| **A1 (recommended)** | Lightsail Windows + **Lightsail managed Postgres** | Ab — sab ek hi VPC mein |
-| A2 | RDS banao par **same VPC** mein Lightsail ka… | ❌ possible nahi |
-| B | Sab EC2 + RDS (default VPC) | Budget $152 ho tab |
-
-**Matlab: Lightsail choose kiya to database bhi Lightsail ka lena.** Ye asal mein accha
-hai — $15 vs RDS $37, aur console mein ek hi jagah.
+RDS tab hi lena jab EC2 bhi le rahe ho (default VPC) — wo $150+/mo ka raasta hai.
 
 ---
 
-## 4. Connection budget — 1 GB DB par
-
-1 GB managed DB ginti mein chhoti hai. Pool ko **manually** set karna padega.
+## 8. Connection budget — 2 GB DB par
 
 | Process | Pool | Instances | Total |
 |---|---|---|---|
 | API (uvicorn) | 6 | 4 | 24 |
 | Outbox worker | 2 | 1 | 2 |
 | Event poller | 2 | 1 | 2 |
-| Maintenance job | 2 | 1 (roz 4 baje) | 2 |
-| **Peak total** | | | **30** |
+| Maintenance | 2 | 1 (roz 4 baje) | 2 |
+| **Peak** | | | **30** |
 
-`.env` mein:
-
+`.env`:
 ```
 DATABASE_POOL_SIZE=6
 DATABASE_MAX_OVERFLOW=0
@@ -133,162 +209,187 @@ DATABASE_POOL_TIMEOUT=30
 DATABASE_POOL_RECYCLE=1800
 ```
 
-`MAX_OVERFLOW=0` matlab pool 6 se kabhi nahi badhega — request connection ka **wait**
-karegi (30s tak) instead of DB par 7th connection kholne ke. Chhoti DB par yahi sahi
-hai: thoda slow hona, crash se behtar.
+`MAX_OVERFLOW=0` = pool 6 se kabhi nahi badhega. Request connection **wait** karegi (30s
+tak) instead of 7th connection kholne ke. Chhoti DB par: **thoda slow, crash se accha**.
 
-> **Note:** ye env vars asli mein apply hote hain — worker mein ek bug tha jo unko
-> ignore kar raha tha (`create_database_engine()` bare call). Isi commit mein fix kiya.
-> Iske bina workers default `pool_size=5, overflow=10` = 15 per worker lete.
+**2 GB plan par `DATABASE_POOL_SIZE=4`** rakho (total ~20).
+
+> Worker mein bug tha jo ye env vars ignore karta tha — isi branch par fix hua.
 
 ---
 
-## 5. Neon se migrate — 4 step
+## 9. Neon se migrate
 
-### Agar abhi koi asli customer data nahi hai (most likely)
+### Agar asli customer data nahi hai (most likely)
 
-Bahut simple — kuch dump/restore nahi chahiye:
+```bash
+# 1. Lightsail mein PostgreSQL banao
+# 2. .env mein DATABASE_URL badlo
+# 3. naya venv banao (Linux)
+cd backend && python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 
-1. Lightsail mein PostgreSQL banao (same region)
-2. `.env` mein `DATABASE_URL` badlo
-3. `.venv\Scripts\python.exe -m alembic upgrade head`
-4. `.venv\Scripts\python.exe -m pytest -q` → 143 passed
+# 4.
+python -m alembic upgrade head
 
-Bas. Naya khaali DB, saari tables ban jayengi.
+# 5.
+python -m pytest -q          # → 143 passed, 1 skipped
+```
 
 ### Agar data hai
 
-```powershell
-# 1. Neon se dump — UNPOOLED endpoint use karo
-pg_dump "$env:NEON_URL" -Fc -f mailflow.dump
-
-# 2. Lightsail/RDS par restore
-pg_restore -d "$env:AWS_DB_URL" --no-owner --no-acl mailflow.dump
-
-# 3. .env badlo, phir migration + test
-.venv\Scripts\python.exe -m alembic upgrade head
-.venv\Scripts\python.exe -m pytest -q
+```bash
+pg_dump "$NEON_URL_UNPOOLED" -Fc -f mailflow.dump     # Neon ka UNPOOLED endpoint
+pg_restore -d "$AWS_DB_URL" --no-owner --no-acl mailflow.dump
+python -m alembic upgrade head
 ```
 
-`pg_dump`/`pg_restore` ke liye Windows par **PostgreSQL client tools** chahiye
-(`winget install PostgreSQL.PostgreSQL`).
-
-**Faayda:** Neon ke pooled/unpooled ka jhanjhat khatam. Lightsail DB direct connection
-deta hai.
+**Faayda:** Neon ke pooled/unpooled ka jhanjhat **khatam**.
 
 ---
 
-## 6. SES credentials — Lightsail par IAM role nahi milta
+## 10. SES credentials — Lightsail par IAM role nahi
 
-EC2 par IAM role attach hota hai (key ki zaroorat nahi). **Lightsail par nahi.** Isliye:
+EC2 par role attach hota hai. **Lightsail par nahi.** Isliye:
 
-1. IAM mein ek **dedicated user** banao — `mailflow-ses-sender`
-2. Policy: sirf `ses:SendEmail` + `ses:SendRawEmail` (SES resource ARN tak limited)
-3. Access key → `.env` mein `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-4. **Admin key kabhi mat use karo** server par
-
-Risk: key `.env` mein plaintext hai. Mitigation: file permissions, RDP par sirf aap,
-aur key ko 90 din mein rotate.
+1. IAM user `mailflow-ses-sender`, policy **sirf** `ses:SendEmail` + `ses:SendRawEmail`
+2. Key `.env` mein (`chmod 600 .env`)
+3. **Admin key kabhi server par nahi**
 
 ---
 
-## 7. Kya lena hai — aur kya *nahi*
+## 11. Kya lena hai — aur kya *nahi*
 
 | ✅ Lena | ❌ Nahi lena | Kyun |
 |---|---|---|
-| Lightsail Windows 8 GB | EC2 Windows | RDP + licence + IP bundled, $26/mo sasta |
-| Lightsail managed PG | RDS | Lightsail VPC se peer nahi hota; $22/mo sasta |
-| SES | — | already |
-| SNS + SQS | SQS wala DLQ haan | Phase 7c ka pipeline |
-| Lightsail snapshots | EBS snapshots alag | ₹40/mo, ek click |
-| CloudWatch basic | — | free tier |
-| — | **ElastiCache Redis** | outbox already queue hai |
-| — | **ALB / Load balancer** | 1 server hai |
-| — | **NAT Gateway** | ~$32/mo, bilkul zaroorat nahi |
-| — | **CloudFront** | abhi nahi |
-| — | **Route 53 hosted zone** | domain jahan hai wahi DNS rakho ($0.50/mo bachta hai) |
-| — | **Multi-AZ** | $30 extra, pre-revenue par nahi |
+| Lightsail Ubuntu 4 GB | EC2 (koi bhi) | licence + IP + transfer bundled |
+| Lightsail managed PG 2 GB | RDS | VPC peer nahi; $7-10 sasta |
+| SES + SNS + SQS + DLQ | **ElastiCache Redis** | `outbox_events` already queue hai |
+| Lightsail snapshots | **ALB** | 1 server hai |
+| CloudWatch basic | **NAT Gateway** | ~$32/mo, zaroorat nahi |
+| Budget alarm | **CloudFront** | abhi nahi |
+| — | **Multi-AZ** | $30 extra, pre-revenue nahi |
+| — | **Route 53 hosted zone** | jahan domain hai wahi DNS rakho |
 
 ---
 
-## 8. 4 mahine baad — decide karne ka table
+## 12. Setup order — ek ek step, checkpoint ke saath
 
-| Situation | Kya karo |
-|---|---|
-| Revenue ~0, credits khatam | **Lightsail Linux $12 + Neon free/Lightsail PG $15** = ~$30 |
-| 2-5 paid customers | Lightsail Windows 8 GB + PG 2 GB (encryption) = $104 |
-| 20+ paid customers | RDS + Multi-AZ, ya 2nd server + LB |
-| Credits bache hue | Lightsail Windows + **RDS db.t4g.medium** ($100/mo) — Mumbai, no VPC issue |
+### Step 0: AWS Activate apply (pehle ye)
+Website chahiye. 5-10 din. **Credits aane se pehle paid setup shuru mat karo.**
 
-**RDS tab hi jab budget $150+ ho** — kyunki RDS ke saath EC2 chahiye, Lightsail nahi.
+**✅ Checkpoint:** approval email.
 
----
-
-## 9. Setup order — ek ek step, checkpoint ke saath
-
-### Step 1: Lightsail Windows instance
+### Step 1: Lightsail Linux instance
 - Region: **Mumbai (ap-south-1)**
-- Blueprint: **Windows Server 2022**
-- Plan: **8 GB / 2 vCPU / 160 GB — $74**
+- Blueprint: **Ubuntu 24.04 LTS**
+- Plan: **4 GB / 2 vCPU / 80 GB — $24**
 - Static IP attach karo
+- Networking → firewall: **22 (apna IP), 80, 443** — 8000 band rakho
 
-**✅ Checkpoint:** browser RDP khulta hai, Windows desktop dikhta hai.
+**✅ Checkpoint:** `ssh ubuntu@<static-ip>` se login ho jaye.
 
 ### Step 2: Lightsail PostgreSQL
 - Region: **Mumbai (same)**
-- Engine: **PostgreSQL 16**
-- Plan: **1 GB — $15** (asli data se pehle 2 GB)
-- **"Advanced database options"** → `mailflow-owner` user + strong password
+- Engine: **PostgreSQL 16**, plan **2 GB — $30** (encryption isliye)
+- User `mailflow_owner`, strong password
 
-**✅ Checkpoint:** Lightsail console → database → **Connect** tab par "Connected" dikhe.
+**✅ Checkpoint:** console → database → "Connected".
 
-### Step 3: DB connection test (Windows par)
-```powershell
-Test-NetConnection <db-endpoint> -Port 5432
+### Step 3: Server se DB test
+```bash
+sudo apt install -y postgresql-client
+psql "$DATABASE_URL" -c "select version();"
 ```
-`TcpTestSucceeded : True` chahiye. False aaye to **Lightsail firewall rule** — instance
-ke networking tab se DB ko allow karo.
 
-**✅ Checkpoint:** True.
+**✅ Checkpoint:** version string dikhe. Fail ho to Lightsail firewall mein DB ko
+instance se allow karo.
 
-### Step 4: App deploy + migration
-```powershell
-cd backend
-.venv\Scripts\python.exe -m alembic upgrade head
-.venv\Scripts\python.exe -m pytest -q
+### Step 4: App deploy
+```bash
+sudo apt update && sudo apt install -y python3.12-venv git
+cd ~ && git clone <private-repo> && cd Mailflow/backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env      # phir values bharo
+python -m alembic upgrade head
+python -m pytest -q
 ```
 
 **✅ Checkpoint:** `143 passed, 1 skipped`.
 
-### Step 5: API + workers chalao
-```powershell
-.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
-.venv\Scripts\python.exe -m app.services.outbox
-.venv\Scripts\python.exe -m app.services.event_poller --loop
+### Step 5: systemd service (auto-restart)
+`/etc/systemd/system/mailflow-api.service`:
+```ini
+[Unit]
+Description=MailFlow API
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Mailflow/backend
+EnvironmentFile=/home/ubuntu/Mailflow/backend/.env
+ExecStart=/home/ubuntu/Mailflow/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-**✅ Checkpoint:** `https://<static-ip>/health` (ya port 8000) 200 deta hai.
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now mailflow-api
+```
 
-### Step 6: Snapshot lo
+Isi tarah `mailflow-outbox.service` aur `mailflow-poller.service` (worker commands ke
+saath, `Restart=always`).
+
+**✅ Checkpoint:** `curl localhost:8000/health` → 200. `sudo systemctl status mailflow-api`
+→ **active (running)**.
+
+### Step 6: Caddy (HTTPS, 2 line mein)
+```bash
+sudo apt install -y caddy
+```
+`/etc/caddy/Caddyfile`:
+```
+api.aapkadomain.com {
+    reverse_proxy localhost:8000
+}
+```
+**✅ Checkpoint:** `https://api.aapkadomain.com/health` → 200, lock icon ✅.
+
+### Step 7: Snapshot
 Lightsail console → instance → **Snapshots** → Create.
 
-**✅ Checkpoint:** snapshot "Available".
+**✅ Checkpoint:** "Available".
 
 ---
 
-## 10. Monthly bill kaise dekhein
+## 13. Monthly bill kaise dekhein
 
-**Billing → Cost Explorer** → Group by **Service**.
+Billing → **Cost Explorer** → Group by **Service**.
 
 | Service | Expected $/mo |
 |---|---|
-| Lightsail (Windows) | 74 |
-| Lightsail (Database) | 15 |
-| SES | 0-5 (volume ke hisaab se) |
+| Lightsail (Ubuntu) | 24 |
+| Lightsail (Database) | 30 |
+| SES | 0-5 |
 | SNS / SQS | <1 |
-| Data transfer | 0 (bundle mein) |
-| **Total** | **~$90-95** |
+| **Total** | **~$55-60** |
 
-**Budget alarm lagao:** Billing → Budgets → $100/mo, 80% par email.
-Ye ek-line ka guard hai — galat instance type ya bhoola hua NAT Gateway turant pakda
-jayega.
+**Budget alarm:** Billing → Budgets → **$75/mo, 80% par email**.
+
+---
+
+## 14. 4 mahine baad — decide karne ka table
+
+| Situation | Kya karo |
+|---|---|
+| Credits khatam, revenue 0 | Lightsail Linux 2 GB ($12) + PG 1 GB ($15) = **$27** |
+| Credits bache, customers aa rahe | Same plan, DB **4 GB ($60)** |
+| 20+ paid customers | 2nd Lightsail + LB, ya EC2 + RDS |
+| Bahut zyada | Neon Scale + VPS (dekh `VPS-SIZING.md`) |
+
+**Jab revenue aaye:** Hostinger KVM 4 (₹1,099 intro / ₹2,399 renewal, 4 vCPU/16 GB)
++ Neon — sabse sasta long-term. Lightsail se ₹500-1,000/mo bachta hai.
