@@ -14,6 +14,14 @@ from app.api.dependencies import get_db_session
 from app.api.email_auth import get_email_key
 from app.api.errors import APIError
 from app.models.delivery import APIKey, EmailMessage, OutboxEvent
+from app.models.organization import Organization
+from app.services.quota import (
+    PlanMissing,
+    QuotaExceeded,
+    load_limit,
+    reserve_send,
+    usage_summary,
+)
 
 router = APIRouter()
 
@@ -73,6 +81,19 @@ def conflict() -> APIError:
     )
 
 
+def quota_error(exc: QuotaExceeded) -> APIError:
+    """Translate a quota refusal into the API's uniform error envelope."""
+    return APIError(status_code=429, code=exc.code, message=exc.message, headers=exc.headers)
+
+
+def plan_error() -> APIError:
+    return APIError(
+        status_code=503,
+        code="plan_not_configured",
+        message="This organization's sending plan is not configured.",
+    )
+
+
 def existing(db: Session, key: APIKey, idempotency: str) -> EmailMessage | None:
     return db.scalar(
         select(EmailMessage).where(
@@ -101,6 +122,28 @@ def submit_email(
                 raise conflict()
             response.headers["Cache-Control"] = "no-store"
             return view(previous)
+
+        # Reserve quota before insert so an idempotent replay never double-charges,
+        # and a refusal writes nothing at all. The reservation and the email insert
+        # share one transaction: either both land or neither does.
+        organization = db.get(Organization, key.organization_id)
+        if organization is None:
+            raise plan_error()
+        try:
+            limit = load_limit(db, organization)
+        except PlanMissing:
+            raise plan_error() from None
+        try:
+            used = reserve_send(
+                db,
+                organization=organization,
+                recipients=[str(item) for item in payload.to],
+                limit=limit,
+            )
+        except QuotaExceeded as exc:
+            db.rollback()
+            raise quota_error(exc) from None
+
         message = EmailMessage(
             organization_id=key.organization_id,
             api_key_id=key.id,
@@ -121,6 +164,9 @@ def submit_email(
         db.commit()
         db.refresh(message)
         response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Quota-Remaining"] = str(
+            max(0, limit.daily_email_limit - used.emails_sent)
+        )
         return view(message)
     except IntegrityError:
         db.rollback()
@@ -156,6 +202,27 @@ def list_emails(
         return [view(message) for message in messages]
     except SQLAlchemyError:
         raise unavailable() from None
+
+
+@router.get("/usage", response_model=None)
+def get_usage(
+    response: Response,
+    key: APIKey = Depends(get_email_key),
+    db: Session = Depends(get_db_session),
+) -> dict:
+    """Today's quota consumption and the limits that apply to this organization."""
+    try:
+        organization = db.get(Organization, key.organization_id)
+        if organization is None:
+            raise plan_error()
+        try:
+            summary = usage_summary(db, organization)
+        except PlanMissing:
+            raise plan_error() from None
+    except SQLAlchemyError:
+        raise unavailable() from None
+    response.headers["Cache-Control"] = "no-store"
+    return summary
 
 
 @router.get("/{email_id}")

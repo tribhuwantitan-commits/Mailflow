@@ -7,12 +7,14 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401 - register all model metadata for test schema setup
 from app.config import Settings
 from app.db.base import Base
 from app.main import create_app
+from app.models.quota import DEFAULT_PLANS, SendingPlan
 
 
 @pytest.fixture
@@ -32,6 +34,11 @@ def database_engine() -> Iterator[Engine]:
         cursor.close()
 
     Base.metadata.create_all(engine)
+    # create_all builds tables but does not run the seed migration, so the plan
+    # catalogue has to be inserted here for quota checks to resolve a plan.
+    with Session(engine) as session:
+        session.add_all([SendingPlan(**plan) for plan in DEFAULT_PLANS])
+        session.commit()
     yield engine
     engine.dispose()
 

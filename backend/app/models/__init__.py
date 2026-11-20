@@ -3,6 +3,7 @@
 from app.models.delivery import APIKey, EmailMessage, OutboxEvent
 from app.models.identity import AuthSession, User
 from app.models.organization import Organization, OrganizationMembership
+from app.models.quota import RecipientDailyCount, SendingPlan, UsageDaily
 
 __all__ = [
     "APIKey",
@@ -11,5 +12,8 @@ __all__ = [
     "Organization",
     "OrganizationMembership",
     "OutboxEvent",
+    "RecipientDailyCount",
+    "SendingPlan",
+    "UsageDaily",
     "User",
 ]

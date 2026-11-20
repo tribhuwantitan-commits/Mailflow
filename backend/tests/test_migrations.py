@@ -33,6 +33,9 @@ def test_auth_organization_migration_applies_and_downgrades_cleanly(tmp_path, mo
             "api_keys",
             "email_messages",
             "outbox_events",
+            "sending_plans",
+            "usage_daily",
+            "recipient_daily_counts",
         }
         assert expected_tables.issubset(set(inspector.get_table_names()))
         assert {item["name"] for item in inspector.get_unique_constraints("users")} == {
@@ -47,7 +50,7 @@ def test_auth_organization_migration_applies_and_downgrades_cleanly(tmp_path, mo
             version = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-            assert version == "0004_worker"
+            assert version == "0005_quota"
     finally:
         engine.dispose()
 
@@ -77,6 +80,6 @@ def test_auth_organization_migration_applies_and_downgrades_cleanly(tmp_path, mo
                         version = connection.execute(
                             text("SELECT version_num FROM alembic_version")
                         ).scalar_one()
-                        assert version == "0004_worker"
+                        assert version == "0005_quota"
                 finally:
                     engine.dispose()
