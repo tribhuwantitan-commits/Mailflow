@@ -35,6 +35,17 @@ class Settings(BaseSettings):
     ses_from_email: str = Field(default="noreply@example.com")
     ses_configuration_set: str | None = Field(default=None)
 
+    # Phase 7c: SES event publishing lands in SNS, which fans out to this queue.
+    # Empty means the poller refuses to start rather than hammering a guessed URL.
+    sqs_event_queue_url: str | None = Field(default=None)
+
+    # Phase 7c: how long to keep an email's body. Metadata and delivery state are
+    # kept forever; the body is the part that grows unbounded (see VPS-SIZING.md).
+    email_body_retention_days: int = Field(default=30, ge=1, le=365)
+
+    # Phase 7c: reply-to for the unsubscribe mailbox advertised in List-Unsubscribe.
+    unsubscribe_mailto: str | None = Field(default=None)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

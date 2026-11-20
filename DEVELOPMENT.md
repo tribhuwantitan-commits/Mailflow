@@ -1,8 +1,23 @@
 # Development guide
 
-**Current implemented stage:** Phase 4 worker reliability hardening (PostgreSQL integration validation pending). AI-assisted coding happens in the Arena.ai sandbox and the private GitHub repository is the permanent source of truth. Windows Server over RDP is the intended host for a future PostgreSQL validation run; such a run has not been completed here. A personal PC is not part of the workflow.
+**Current implemented stage:** Phase 9 — dashboard. Everything below is on the
+`arena/67b5c744-mailflow` branch and pushed; `main` is behind by 17 commits. An AI coding
+agent should read [AGENTS.md](AGENTS.md) first.
 
-Implemented: Phase 1 FastAPI/SQLAlchemy/Alembic, health checks and fake provider; Phase 2 sessions and membership-scoped organizations; Phase 3 owner-managed API keys, REST email submission and transactional outbox; Phase 4 fenced worker leases, retry recovery and operator status. The fake provider sends no real mail. There is still no frontend, verified sender-domain management, SES integration, SMTP listener, Redis/Celery, or deployment setup. PostgreSQL integration testing is pending.
+Implemented: Phase 1 FastAPI/SQLAlchemy/Alembic and health checks; Phase 2 sessions and
+membership-scoped organizations; Phase 3 owner-managed API keys, REST submission and the
+transactional outbox; Phase 4 fenced worker leases; Phase 5 fake-provider validation;
+Phase 6 SES provider (live test still pending); Phase 7a per-tenant domain verification
+with a send-time gate; 7b daily quota and per-recipient guard; 7c SES event ingest,
+suppression, tenant auto-pause, `List-Unsubscribe` and retention; Phase 9 dashboard
+(stats endpoint plus a no-build HTML page).
+
+Not built: login/signup pages, billing and upgrade flow, open/click tracking, an
+email-detail page. PostgreSQL has not been validated end to end — no connection string
+in this environment, so `tests/test_postgres_integration.py` skips.
+
+Deployment: [docs/DEPLOY-RUNBOOK.md](docs/DEPLOY-RUNBOOK.md) is the Windows Server
+procedure, step by step with checkpoints.
 
 ## 1. Work and file-transfer workflow
 
@@ -199,7 +214,19 @@ The current Starlette release emits a deprecation warning when its `TestClient` 
 [docs/PRICING-ANALYSIS.md](docs/PRICING-ANALYSIS.md),
 [docs/UNIT-ECONOMICS.md](docs/UNIT-ECONOMICS.md),
 [docs/PAYMENTS-TAX-FREETIER.md](docs/PAYMENTS-TAX-FREETIER.md),
-[docs/SES-TEST-GUIDE.md](docs/SES-TEST-GUIDE.md) and
+[docs/SES-TEST-GUIDE.md](docs/SES-TEST-GUIDE.md),
+[docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md),
+[docs/VPS-SIZING.md](docs/VPS-SIZING.md),
+[docs/PHASE-7B-QUOTA.md](docs/PHASE-7B-QUOTA.md),
+[docs/PHASE-7A-DOMAINS.md](docs/PHASE-7A-DOMAINS.md),
+[docs/PHASE-7C-EVENTS.md](docs/PHASE-7C-EVENTS.md),
+[docs/AWS-ONLY-PLAN.md](docs/AWS-ONLY-PLAN.md),
+[docs/COST-MODEL-RECONCILIATION.md](docs/COST-MODEL-RECONCILIATION.md),
+[docs/CREDITS-RUNWAY.md](docs/CREDITS-RUNWAY.md),
+[docs/MARKETING-PLAYBOOK.md](docs/MARKETING-PLAYBOOK.md),
+[docs/PHASE-9-DASHBOARD.md](docs/PHASE-9-DASHBOARD.md),
+[docs/DEPLOY-RUNBOOK.md](docs/DEPLOY-RUNBOOK.md),
+[docs/OFFLINE-TRANSFER.md](docs/OFFLINE-TRANSFER.md) and
 [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) for scope, limitations and sequencing.
 Do not treat these phases as implemented.
 

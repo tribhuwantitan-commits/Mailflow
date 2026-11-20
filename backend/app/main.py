@@ -11,13 +11,16 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.auth import router as auth_router
+from app.api.dashboard import router as dashboard_router
+from app.api.domains import router as domains_router
 from app.api.emails import router as emails_router
 from app.api.errors import APIError
 from app.api.keys import router as keys_router
 from app.api.organizations import router as organizations_router
+from app.api.stats import router as stats_router
 from app.config import Settings
 from app.database import check_database, create_database_engine, create_session_factory
-from app.providers import get_email_provider
+from app.providers import get_domain_verifier, get_email_provider
 
 logger = logging.getLogger("mailflow.health")
 
@@ -52,6 +55,7 @@ def create_app(
     app.state.database_engine = engine
     app.state.session_factory = create_session_factory(engine)
     app.state.email_provider = get_email_provider(app_settings)
+    app.state.domain_verifier = get_domain_verifier(app_settings)
 
     @app.exception_handler(APIError)
     async def api_error_handler(_request: Request, exc: APIError) -> JSONResponse:
@@ -85,6 +89,14 @@ def create_app(
         keys_router, prefix="/v1/organizations/{organization_id}/api-keys", tags=["api-keys"]
     )
     app.include_router(emails_router, prefix="/v1/emails", tags=["emails"])
+    app.include_router(
+        domains_router,
+        prefix="/v1/organizations/{organization_id}/domains",
+        tags=["domains"],
+    )
+
+    app.include_router(stats_router, prefix="/v1/organizations", tags=["dashboard"])
+    app.include_router(dashboard_router, tags=["dashboard"])
 
     @app.get("/health/live", tags=["health"])
     def health_live() -> dict[str, str]:

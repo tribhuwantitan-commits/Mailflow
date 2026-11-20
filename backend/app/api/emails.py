@@ -14,6 +14,16 @@ from app.api.dependencies import get_db_session
 from app.api.email_auth import get_email_key
 from app.api.errors import APIError
 from app.models.delivery import APIKey, EmailMessage, OutboxEvent
+from app.models.delivery_events import DeliveryEvent
+from app.models.organization import Organization
+from app.services.domains import sender_domain_allowed
+from app.services.quota import (
+    PlanMissing,
+    QuotaExceeded,
+    load_limit,
+    reserve_send,
+    usage_summary,
+)
 
 router = APIRouter()
 
@@ -73,6 +83,32 @@ def conflict() -> APIError:
     )
 
 
+def quota_error(exc: QuotaExceeded) -> APIError:
+    """Translate a quota refusal into the API's uniform error envelope."""
+    return APIError(status_code=429, code=exc.code, message=exc.message, headers=exc.headers)
+
+
+def plan_error() -> APIError:
+    return APIError(
+        status_code=503,
+        code="plan_not_configured",
+        message="This organization's sending plan is not configured.",
+    )
+
+
+def sender_not_verified(sender: str) -> APIError:
+    """Refuse a send whose From domain this tenant has not verified."""
+    domain = sender.rsplit("@", 1)[-1].lower() if "@" in sender else sender
+    return APIError(
+        status_code=403,
+        code="sender_domain_not_verified",
+        message=(
+            f"The domain {domain} is not verified for this organization. "
+            "Add and verify it under Sending domains before sending from it."
+        ),
+    )
+
+
 def existing(db: Session, key: APIKey, idempotency: str) -> EmailMessage | None:
     return db.scalar(
         select(EmailMessage).where(
@@ -101,6 +137,47 @@ def submit_email(
                 raise conflict()
             response.headers["Cache-Control"] = "no-store"
             return view(previous)
+
+        # A tenant may only send as a domain it has verified. Checked before quota
+        # so a refusal never consumes the tenant's daily allowance.
+        if not sender_domain_allowed(db, key.organization_id, str(payload.sender)):
+            raise sender_not_verified(str(payload.sender))
+
+        # Reserve quota before insert so an idempotent replay never double-charges,
+        # and a refusal writes nothing at all. The reservation and the email insert
+        # share one transaction: either both land or neither does.
+        organization = db.get(Organization, key.organization_id)
+        if organization is None:
+            raise plan_error()
+        # A paused tenant is refused here as well as in the worker: a queued message
+        # would otherwise sit until the pause is lifted, and the caller deserves an
+        # immediate, actionable error.
+        if organization is not None and organization.sending_paused_at is not None:
+            raise APIError(
+                status_code=403,
+                code="sending_paused",
+                message=(
+                    "Sending is paused for this organization: "
+                    f"{organization.sending_paused_reason or 'reputation review'}. "
+                    "Contact support to resume."
+                ),
+            )
+
+        try:
+            limit = load_limit(db, organization)
+        except PlanMissing:
+            raise plan_error() from None
+        try:
+            used = reserve_send(
+                db,
+                organization=organization,
+                recipients=[str(item) for item in payload.to],
+                limit=limit,
+            )
+        except QuotaExceeded as exc:
+            db.rollback()
+            raise quota_error(exc) from None
+
         message = EmailMessage(
             organization_id=key.organization_id,
             api_key_id=key.id,
@@ -121,6 +198,9 @@ def submit_email(
         db.commit()
         db.refresh(message)
         response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Quota-Remaining"] = str(
+            max(0, limit.daily_email_limit - used.emails_sent)
+        )
         return view(message)
     except IntegrityError:
         db.rollback()
@@ -158,6 +238,27 @@ def list_emails(
         raise unavailable() from None
 
 
+@router.get("/usage", response_model=None)
+def get_usage(
+    response: Response,
+    key: APIKey = Depends(get_email_key),
+    db: Session = Depends(get_db_session),
+) -> dict:
+    """Today's quota consumption and the limits that apply to this organization."""
+    try:
+        organization = db.get(Organization, key.organization_id)
+        if organization is None:
+            raise plan_error()
+        try:
+            summary = usage_summary(db, organization)
+        except PlanMissing:
+            raise plan_error() from None
+    except SQLAlchemyError:
+        raise unavailable() from None
+    response.headers["Cache-Control"] = "no-store"
+    return summary
+
+
 @router.get("/{email_id}")
 def get_email(
     email_id: UUID,
@@ -177,3 +278,38 @@ def get_email(
         raise APIError(status_code=404, code="email_not_found", message="Email not found.")
     response.headers["Cache-Control"] = "no-store"
     return view(message)
+
+
+@router.get("/{email_id}/events", response_model=None)
+def get_email_events(
+    email_id: UUID,
+    response: Response,
+    key: APIKey = Depends(get_email_key),
+    db: Session = Depends(get_db_session),
+) -> dict:
+    """Timeline of what happened to one message after the provider accepted it."""
+    try:
+        message = db.get(EmailMessage, email_id)
+        if message is None or message.organization_id != key.organization_id:
+            raise APIError(status_code=404, code="email_not_found", message="Email not found.")
+        events = db.scalars(
+            select(DeliveryEvent)
+            .where(DeliveryEvent.email_id == email_id)
+            .order_by(DeliveryEvent.received_at, DeliveryEvent.id)
+        ).all()
+    except SQLAlchemyError:
+        raise unavailable() from None
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "id": message.id,
+        "status": message.status,
+        "events": [
+            {
+                "type": event.event_type,
+                "recipient": event.recipient,
+                "occurred_at": event.provider_event_at,
+                "received_at": event.received_at,
+            }
+            for event in events
+        ],
+    }

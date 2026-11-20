@@ -6,6 +6,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -32,6 +34,29 @@ class Organization(Base):
     owner_user_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
+    # Which sending_plans row applies. Defaults to the free tier so a newly created
+    # tenant is capped immediately rather than unlimited until someone notices.
+    plan: Mapped[str] = mapped_column(
+        String(40),
+        ForeignKey("sending_plans.slug", ondelete="RESTRICT"),
+        nullable=False,
+        server_default="free",
+        default="free",
+    )
+    # Support-issued lifts for a single tenant, kept separate from the plan so the
+    # catalogue stays a catalogue. NULL means "use the plan value".
+    plan_overrides: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=True
+    )
+    # Proof that the contact address belongs to the signup. Card verification is the
+    # other route in the plan ladder; both are recorded so a 100/day free tier can be
+    # granted without a human looking at it.
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    card_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set by the reputation guard when a tenant's bounce/complaint rate crosses the
+    # threshold; sending is refused until support clears it.
+    sending_paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sending_paused_reason: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

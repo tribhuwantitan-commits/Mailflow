@@ -17,17 +17,37 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.delivery import EmailMessage, OutboxEvent
+from app.models.organization import Organization
 from app.providers.email import (
     EmailProvider,
     OutboundEmail,
     PermanentProviderError,
     TemporaryProviderError,
 )
+from app.services.delivery_events import suppressed_recipients
 
 logger = logging.getLogger("mailflow.worker")
 MAX_ATTEMPTS = 5
 LEASE_SECONDS = 120
 HEARTBEAT_SECONDS = 30
+
+
+def _engine_from_settings(settings, create_database_engine, create_session_factory):
+    """Build a worker engine with the configured pool, not the library defaults.
+
+    Workers used to call create_database_engine() bare, so DATABASE_POOL_SIZE and
+    its siblings only ever affected the API process. On a small managed database
+    that difference is the whole connection budget.
+    """
+    engine = create_database_engine(
+        settings.database_url,
+        settings.database_connect_timeout_seconds,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
+        pool_timeout=settings.database_pool_timeout,
+        pool_recycle=settings.database_pool_recycle,
+    )
+    return engine, create_session_factory(engine)
 
 
 def now_utc() -> datetime:
@@ -83,7 +103,28 @@ def _heartbeat(factory: sessionmaker[Session], event_id: UUID, token: UUID, stop
             return
 
 
-def process_event(factory: sessionmaker[Session], provider: EmailProvider, event_id: UUID) -> bool:
+def unsubscribe_headers(sender: str, unsubscribe_mailto: str | None) -> tuple[tuple[str, str], ...]:
+    """Build RFC 8058 one-click unsubscribe headers.
+
+    Only added when an unsubscribe mailbox is configured, because advertising a
+    mailbox nobody reads is worse than advertising none: a recipient who replies to
+    a dead address is a complaint waiting to happen. Gmail and Yahoo both look for
+    these on bulk senders.
+    """
+    if not unsubscribe_mailto:
+        return ()
+    return (
+        ("List-Unsubscribe", f"<mailto:{unsubscribe_mailto}?subject=unsubscribe>"),
+        ("List-Unsubscribe-Post", "List-Unsubscribe=One-Click"),
+    )
+
+
+def process_event(
+    factory: sessionmaker[Session],
+    provider: EmailProvider,
+    event_id: UUID,
+    unsubscribe_mailto: str | None = None,
+) -> bool:
     """Atomically claim once, heartbeat during send, and fence stale completions.
 
     A crashed worker's lease is recoverable. External provider acceptance remains
@@ -120,14 +161,43 @@ def process_event(factory: sessionmaker[Session], provider: EmailProvider, event
         message.status = "sending"
         message.attempt_count += 1
         attempt = message.attempt_count
+
+        # Two refusals that must never reach the provider: an organization paused for
+        # reputation, and recipients this tenant has already hard-bounced or that
+        # complained. Both are terminal for this message — retrying changes nothing.
+        recipients = tuple(json.loads(message.recipients))
+        refusal = None
+        organization = db.get(Organization, message.organization_id)
+        if organization is not None and organization.sending_paused_at is not None:
+            refusal = "organization_paused"
+        else:
+            blocked = suppressed_recipients(db, message.organization_id, list(recipients))
+            if blocked:
+                refusal = "recipient_suppressed"
+        if refusal is not None:
+            message.status = "failed"
+            message.error_code = refusal
+            event.state = "done"
+            event.lease_until = None
+            event.lease_token = None
+            db.commit()
+            logger.warning(
+                "worker_refused event_id=%s email_id=%s reason=%s",
+                event_id,
+                message.id,
+                refusal,
+            )
+            return True
+
         outbound = OutboundEmail(
             sender=message.sender,
-            recipients=tuple(json.loads(message.recipients)),
+            recipients=recipients,
             subject=message.subject,
             text_body=message.text_body,
             html_body=message.html_body,
             reply_to=message.reply_to,
             idempotency_key=str(message.id),
+            headers=unsubscribe_headers(message.sender, unsubscribe_mailto),
         )
         db.commit()
 
@@ -196,7 +266,12 @@ def process_event(factory: sessionmaker[Session], provider: EmailProvider, event
             return True
 
 
-def process_due(factory: sessionmaker[Session], provider: EmailProvider, limit: int = 50) -> int:
+def process_due(
+    factory: sessionmaker[Session],
+    provider: EmailProvider,
+    limit: int = 50,
+    unsubscribe_mailto: str | None = None,
+) -> int:
     """Run a bounded tick; competing workers safely skip claimed events."""
     if not 1 <= limit <= 1000:
         raise ValueError("limit must be between 1 and 1000")
@@ -207,7 +282,9 @@ def process_due(factory: sessionmaker[Session], provider: EmailProvider, limit: 
             .order_by(OutboxEvent.created_at, OutboxEvent.id)
             .limit(limit)
         ).all()
-        return sum(process_event(factory, provider, event_id) for event_id in ids)
+        return sum(
+            process_event(factory, provider, event_id, unsubscribe_mailto) for event_id in ids
+        )
 
 
 def worker_status(factory: sessionmaker[Session]) -> dict[str, int]:
@@ -264,9 +341,10 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     settings = Settings()
-    engine = create_database_engine(settings.database_url)
+    engine, factory = _engine_from_settings(
+        settings, create_database_engine, create_session_factory
+    )
     try:
-        factory = create_session_factory(engine)
         provider = get_email_provider(settings)
         if args.status:
             logger.info("worker_status %s", worker_status(factory))
@@ -277,7 +355,7 @@ def main() -> None:
                 requeue_failed(factory, args.requeue),
             )
         else:
-            count = process_due(factory, provider)
+            count = process_due(factory, provider, unsubscribe_mailto=settings.unsubscribe_mailto)
             logger.info("worker_tick processed=%d status=%s", count, worker_status(factory))
     finally:
         engine.dispose()

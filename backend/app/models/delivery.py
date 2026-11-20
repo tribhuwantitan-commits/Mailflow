@@ -64,6 +64,15 @@ class EmailMessage(Base):
     provider_message_id: Mapped[str | None] = mapped_column(String(255))
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_code: Mapped[str | None] = mapped_column(String(40))
+
+    # Delivery outcome, filled in later by the SES event ingest (Phase 7c). `status`
+    # alone only says "SES accepted it"; these say what the receiving server did.
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bounced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    complained_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: ``Permanent`` or ``Transient`` when bounced_at is set.
+    bounce_type: Mapped[str | None] = mapped_column(String(20))
+    bounce_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

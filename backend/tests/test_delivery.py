@@ -4,6 +4,7 @@ from datetime import timedelta
 from uuid import UUID
 
 import pytest
+from conftest import enable_sending
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from test_auth import login, register
@@ -12,8 +13,9 @@ from app.models.delivery import APIKey, EmailMessage, OutboxEvent
 from app.providers.email import SimulatedEmailProvider
 from app.services.outbox import now_utc, process_due, process_event
 
+SENDER_DOMAIN = "mailer.example.com"
 PAYLOAD = {
-    "from": "sender@example.com",
+    "from": f"noreply@{SENDER_DOMAIN}",
     "to": ["receiver@example.com"],
     "subject": "Hello",
     "text_body": "Hello there",
@@ -23,6 +25,7 @@ PAYLOAD = {
 def setup(client, email="alice@example.com", name="Alice"):
     org = register(client, email=email, name=name).json()["organization"]["id"]
     login(client, email=email)
+    enable_sending(client, org, SENDER_DOMAIN)
     created = client.post(f"/v1/organizations/{org}/api-keys", json={"name": "Test"})
     assert created.status_code == 201, created.text
     return org, created.json()
