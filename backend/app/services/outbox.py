@@ -32,6 +32,24 @@ LEASE_SECONDS = 120
 HEARTBEAT_SECONDS = 30
 
 
+def _engine_from_settings(settings, create_database_engine, create_session_factory):
+    """Build a worker engine with the configured pool, not the library defaults.
+
+    Workers used to call create_database_engine() bare, so DATABASE_POOL_SIZE and
+    its siblings only ever affected the API process. On a small managed database
+    that difference is the whole connection budget.
+    """
+    engine = create_database_engine(
+        settings.database_url,
+        settings.database_connect_timeout_seconds,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
+        pool_timeout=settings.database_pool_timeout,
+        pool_recycle=settings.database_pool_recycle,
+    )
+    return engine, create_session_factory(engine)
+
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -323,9 +341,10 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     settings = Settings()
-    engine = create_database_engine(settings.database_url)
+    engine, factory = _engine_from_settings(
+        settings, create_database_engine, create_session_factory
+    )
     try:
-        factory = create_session_factory(engine)
         provider = get_email_provider(settings)
         if args.status:
             logger.info("worker_status %s", worker_status(factory))

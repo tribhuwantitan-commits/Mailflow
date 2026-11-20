@@ -204,7 +204,8 @@ The current Starlette release emits a deprecation warning when its `TestClient` 
 [docs/VPS-SIZING.md](docs/VPS-SIZING.md),
 [docs/PHASE-7B-QUOTA.md](docs/PHASE-7B-QUOTA.md),
 [docs/PHASE-7A-DOMAINS.md](docs/PHASE-7A-DOMAINS.md),
-[docs/PHASE-7C-EVENTS.md](docs/PHASE-7C-EVENTS.md) and
+[docs/PHASE-7C-EVENTS.md](docs/PHASE-7C-EVENTS.md),
+[docs/AWS-ONLY-PLAN.md](docs/AWS-ONLY-PLAN.md) and
 [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) for scope, limitations and sequencing.
 Do not treat these phases as implemented.
 

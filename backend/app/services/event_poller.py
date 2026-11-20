@@ -50,6 +50,24 @@ class PollResult:
     paused: int = 0
 
 
+def _engine_from_settings(settings, create_database_engine, create_session_factory):
+    """Build a worker engine with the configured pool, not the library defaults.
+
+    Workers used to call create_database_engine() bare, so DATABASE_POOL_SIZE and
+    its siblings only ever affected the API process. On a small managed database
+    that difference is the whole connection budget.
+    """
+    engine = create_database_engine(
+        settings.database_url,
+        settings.database_connect_timeout_seconds,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
+        pool_timeout=settings.database_pool_timeout,
+        pool_recycle=settings.database_pool_recycle,
+    )
+    return engine, create_session_factory(engine)
+
+
 def poll_once(factory: sessionmaker[Session], client: QueueClient, queue_url: str) -> PollResult:
     """Receive one batch, ingest it, delete what was committed."""
     result = PollResult()
@@ -136,9 +154,10 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("event_poller_no_queue SQS_EVENT_QUEUE_URL is not configured")
         return 2
 
-    engine = create_database_engine(settings.database_url)
+    engine, factory = _engine_from_settings(
+        settings, create_database_engine, create_session_factory
+    )
     try:
-        factory = create_session_factory(engine)
         client = build_client(settings)
         while True:
             result = poll_once(factory, client, queue_url)

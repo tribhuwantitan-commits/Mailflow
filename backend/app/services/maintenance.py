@@ -59,6 +59,24 @@ class CleanupResult:
         )
 
 
+def _engine_from_settings(settings, create_database_engine, create_session_factory):
+    """Build a worker engine with the configured pool, not the library defaults.
+
+    Workers used to call create_database_engine() bare, so DATABASE_POOL_SIZE and
+    its siblings only ever affected the API process. On a small managed database
+    that difference is the whole connection budget.
+    """
+    engine = create_database_engine(
+        settings.database_url,
+        settings.database_connect_timeout_seconds,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
+        pool_timeout=settings.database_pool_timeout,
+        pool_recycle=settings.database_pool_recycle,
+    )
+    return engine, create_session_factory(engine)
+
+
 def clear_expired_bodies(
     db: Session, *, retention_days: int, batch: int = 1000, now: datetime | None = None
 ) -> int:
@@ -164,9 +182,10 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     settings = Settings()
-    engine = create_database_engine(settings.database_url)
+    engine, factory = _engine_from_settings(
+        settings, create_database_engine, create_session_factory
+    )
     try:
-        factory = create_session_factory(engine)
         if args.dry_run:
             logger.info(
                 "maintenance_windows bodies=%dd usage=%dd recipient_counts=%dd "
