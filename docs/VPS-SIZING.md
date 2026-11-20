@@ -312,6 +312,73 @@ problem** hogi.
 
 ---
 
+## 7b. "Free VPS" panels — kyun kaam nahi karte
+
+Sochne layak ek option hai: free VPS panels (Altare, Pterodactyl-type, "96 GB RAM free"
+marketing wale). Ye production SaaS ke liye **kaam nahi karte**. Wajah technical hai,
+moral nahi.
+
+### Ye "VPS" nahi hota
+
+| Aapko kya chahiye | Ye kya deta hai |
+|---|---|
+| Poora OS (Windows RDP ya Linux root) | **container sandbox**, panel ke andar |
+| Dedicated IP | **shared IP**, panel ke saath |
+| Port 80/443 khud control karo | panel/proxy ke peeche |
+| 24x7 guaranteed uptime | node drain, restart, "no capacity" |
+| Data **aapki** disk par | node delete = sab gaya |
+| SLA + support | Discord server |
+
+### Five reasons, MailFlow ke liye
+
+1. **Bolts economy** — CPU/RAM "currency" se kharidte ho jo daily check-in se milti hai.
+   Server ka size **aapke roz check-in karne par depend** karta hai. Bhool gaye →
+   production server chhota ho gaya. Paying customer ke liye ye absurd hai.
+
+2. **No uptime guarantee** — outbox worker ka ek tick miss = password reset email late.
+   Comments mein hi log "no capacity", "server restart hota rehta hai", "site down" likh
+   rahe hain.
+
+3. **Secrets ka risk** — AWS access key `.env` mein hoti hai. Unknown free host ke
+   container par wo rakhna = node snapshot/migrate hone par key kisi aur ke paas.
+   **Ye sabse bada risk hai**, aur wapas undo nahi hota.
+
+4. **AUP/ToS** — ye panels game servers aur dev sandboxes ke liye bante hain. Commercial
+   email platform chalana ban ka karan banta hai — aur tab aapka data bhi saath jata hai.
+
+5. **96 GB RAM marketing hai** — base 6 GB hota hai, "96 GB" overcommit/swap se aata hai.
+   Aapke app ko 8 GB se zyada RAM **chahiye bhi nahi** (section 3). Yani wo number
+   bilkul irrelevant hai — magar shared CPU aur swap latency asli problem hai.
+
+### Kahan use kar sakte ho
+
+| ✅ Theek | ❌ Bilkul nahi |
+|---|---|
+| API ko throwaway Ubuntu par test karna | production |
+| Linux/Docker seekhna | AWS keys rakhna |
+| Demo apne dost ko dikhana | paying customers |
+| CI ka ek step | 24x7 worker |
+
+**Sabse safe:** free panel par **fake provider** (`MAIL_PROVIDER=fake`) chalao, ya sirf
+code padho. Asli `.env` wahan **kabhi** mat rakho.
+
+### Asli comparison
+
+| | Free panel | **Aapka Windows RDP** | Hostinger KVM 4 (India) |
+|---|---|---|---|
+| Cost | "free" (daily check-in) | already paid | ₹1,099 intro / ₹2,399 renew |
+| Root/sudo | limited container | ✅ full | ✅ full |
+| Dedicated IP | ❌ | ✅ | ✅ |
+| Uptime | best effort | aapki zimmedari | ~99.9% |
+| Secrets safe | ❌ | ✅ | ✅ |
+| MailFlow ke liye | ❌ | ✅ | ✅ |
+
+**Nateeja:** 96 GB "free" ka lalach chhodo. Aapke paas already ek Windows VPS hai —
+wahi use karo, aur code changes (section 5) karo. Wo 8 GB par 16 GB se behtar chalega
+agar threads/pool/worker sahi hon.
+
+---
+
 ## 8. Ek line ka verdict
 
 > **4 vCPU / 8 GB / 80 GB — bas itna.** 16 GB ki zaroorat nahi jab tak 20,000 *tenants*
