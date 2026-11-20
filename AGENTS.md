@@ -6,28 +6,28 @@ rediscover, the hard way, decisions that were already made deliberately.
 
 ---
 
-## 0. The one thing that will waste your time
+## 0. Branch state — read this first
 
-**All recent work is on a feature branch, not `main`.**
+**PR #5 is merged.** `main` now contains Phase 7a, 7b, 7c, the re-priced plans, monthly
+quota and the Phase 9 dashboard.
 
 ```
-main                            → 31ef3a1  (old: no quota, no domains, no events, no dashboard)
-arena/67b5c744-mailflow         → 17 commits: Phase 7a, 7b, 7c, pricing, Phase 9   ← WORK HERE
+main  → e722897  (merge of PR #5)   ← canonical, has all 9 migrations
 ```
 
-Check before you clone:
+Verify before you start:
 
 ```bash
-git log --oneline -1 origin/arena/67b5c744-mailflow
+git log --oneline -1 origin/main          # expect e722897 or newer
+git ls-tree -r origin/main --name-only | grep 0009_monthly   # must exist
 ```
 
-If it is not `cbc1fa9` or newer, you are not looking at the current code. On `main`
-you will find none of: `app/models/delivery_events.py`, `app/models/quota.py`,
-`app/api/domains.py`, `app/api/stats.py`, `app/api/dashboard.py`,
-`alembic/versions/0005`–`0009`.
+If `0009_monthly_quota.py` is missing, you are looking at an old checkout: on a tree
+without it there is no quota, no domains, no events and no dashboard, and you will
+re-implement work that already exists.
 
-There is an open PR from this branch into `main`. Do not merge it, do not rebase it,
-do not "helpfully" switch branches. Work only on `arena/67b5c744-mailflow`.
+**Do not merge, rebase or force-push `main`.** New work goes on a branch and arrives
+through a pull request.
 
 ---
 
@@ -220,7 +220,8 @@ python -m ruff check .       # must be clean
 python -m ruff format --check .
 ```
 
-Then commit to `arena/67b5c744-mailflow` and push that branch only. Write the commit
+Then commit to your working branch and push **that branch only**. Write the commit
 message about *why*, not *what* — the diff already says what.
 
-**Do not** merge the PR, force-push, create a new branch, or touch `main`.
+**Do not** force-push, rewrite history, or push anything to `main` directly. Open a pull
+request instead.

@@ -1,8 +1,8 @@
 # Development guide
 
-**Current implemented stage:** Phase 9 — dashboard. Everything below is on the
-`arena/67b5c744-mailflow` branch and pushed; `main` is behind by 17 commits. An AI coding
-agent should read [AGENTS.md](AGENTS.md) first.
+**Current implemented stage:** Phase 9 — dashboard. PR #5 is merged into `main`
+(`e722897`), so `main` is the canonical branch and carries all nine migrations. An AI
+coding agent should read [AGENTS.md](AGENTS.md) first.
 
 Implemented: Phase 1 FastAPI/SQLAlchemy/Alembic and health checks; Phase 2 sessions and
 membership-scoped organizations; Phase 3 owner-managed API keys, REST submission and the
