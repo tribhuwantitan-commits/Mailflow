@@ -225,7 +225,8 @@ The current Starlette release emits a deprecation warning when its `TestClient` 
 [docs/CREDITS-RUNWAY.md](docs/CREDITS-RUNWAY.md),
 [docs/MARKETING-PLAYBOOK.md](docs/MARKETING-PLAYBOOK.md),
 [docs/PHASE-9-DASHBOARD.md](docs/PHASE-9-DASHBOARD.md),
-[docs/DEPLOY-RUNBOOK.md](docs/DEPLOY-RUNBOOK.md) and
+[docs/DEPLOY-RUNBOOK.md](docs/DEPLOY-RUNBOOK.md),
+[docs/OFFLINE-TRANSFER.md](docs/OFFLINE-TRANSFER.md) and
 [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) for scope, limitations and sequencing.
 Do not treat these phases as implemented.
 

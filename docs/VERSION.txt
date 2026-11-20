@@ -1,0 +1,5 @@
+commit: dd03575
+branch: arena/67b5c744-mailflow
+built:  2026-11-20
+tests:  157 passed, 1 skipped
+head:   0009_monthly_quota

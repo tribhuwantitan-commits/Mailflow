@@ -50,7 +50,29 @@ git --version
 
 ---
 
-## Step 2: Code clone
+## Step 2: Code — ZIP ya clone (jo bhi chal jaye)
+
+> **Agar server ke IP se GitHub login nahi hota** (data-centre IP par aam baat hai),
+> to clone skip karo aur **ZIP** use karo: `docs/OFFLINE-TRANSFER.md`.
+> Aage ke saare steps **same** rehte hain — dono raaste `C:\apps\MailFlow` banate hain.
+
+### 2a. ZIP (GitHub login nahi chahiye)
+
+```powershell
+New-Item -ItemType Directory -Force -Path C:\apps | Out-Null
+cd C:\apps
+if (Test-Path .\MailFlow) { Remove-Item .\MailFlow -Recurse -Force }
+Expand-Archive -Path "$env:USERPROFILE\Downloads\MailFlow-<commit>-sources.zip" -DestinationPath C:\apps
+cd C:\apps\MailFlow
+Get-Content .\docs\VERSION.txt
+```
+
+**Checkpoint (ZIP):** `VERSION.txt` mein `tests: 157 passed, 1 skipped` — aur `commit:`
+wahi jo aapko diya gaya. **Ye line hi aapka version proof hai.**
+
+### 2b. Clone (agar GitHub chal jaye)
+
+
 
 ```powershell
 New-Item -ItemType Directory -Force -Path C:\apps | Out-Null
@@ -60,7 +82,8 @@ cd Mailflow
 git log --oneline -1
 ```
 
-**Checkpoint:** last commit `cbc1fa9` ya naya dikhe, aur `git branch --show-current` → `arena/67b5c744-mailflow`
+**Checkpoint:** `git log --oneline -1` → `dd03575` ya naya, aur `git branch --show-current`
+→ `arena/67b5c744-mailflow`
 
 > **Agar `main` par ho** (aur commit `31ef3a1` dikhe) — **galat branch hai**, Phase 7
 > aur 9 ka kuch nahi milega:
@@ -360,4 +383,5 @@ Set-NetFirewallRule -DisplayName "MailFlow API 8000" -Enabled False
 | Dashboard par `401` | Login nahi, cookie nahi | Step 8 ka `curl -c cookies.txt` phir se |
 | Dashboard par `404 error | Request failed` | Branch galat hai (Phase 9 nahi hai) | Step 2 ka branch check |
 | Bahar se timeout | Provider firewall | Console mein port 8000 kholo |
-| `157 passed` ki jagah `main` ke 100-something | **Galat branch** | `git checkout arena/67b5c744-mailflow` |
+| `157 passed` ki jagah kam | **Purana ZIP / galat branch** | `docs/VERSION.txt` check karo, fresh extract |
+| `git` command not recognised | ZIP se extract kiya, git repo nahi hai | `git` commands skip karo — ZIP raaste par zaroorat nahi |
