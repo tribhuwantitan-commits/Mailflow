@@ -151,8 +151,10 @@ def test_ses_missing_from_email_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _make_settings(ses_from_email="")
     provider, _ = _make_provider(settings, monkeypatch)
 
+    # The sender now wins over SES_FROM_EMAIL, so only a message with no sender at
+    # all can reach the missing-from-address branch.
     message = OutboundEmail(
-        sender="sender@example.com",
+        sender="",
         recipients=("recipient@example.com",),
         subject="T",
         text_body="body",

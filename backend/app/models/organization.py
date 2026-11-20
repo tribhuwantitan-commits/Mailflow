@@ -48,6 +48,15 @@ class Organization(Base):
     plan_overrides: Mapped[dict | None] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql"), nullable=True
     )
+    # Proof that the contact address belongs to the signup. Card verification is the
+    # other route in the plan ladder; both are recorded so a 100/day free tier can be
+    # granted without a human looking at it.
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    card_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set by the reputation guard when a tenant's bounce/complaint rate crosses the
+    # threshold; sending is refused until support clears it.
+    sending_paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sending_paused_reason: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

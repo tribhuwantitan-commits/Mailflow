@@ -18,6 +18,9 @@ class OutboundEmail:
     html_body: str | None = None
     reply_to: str | None = None
     idempotency_key: str | None = None
+    #: Extra transport headers, e.g. List-Unsubscribe. Provider-neutral on purpose:
+    #: the SES adapter maps them onto the raw message it builds.
+    headers: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
