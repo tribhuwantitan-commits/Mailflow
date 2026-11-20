@@ -733,6 +733,83 @@ agar threads/pool/worker sahi hon.
 
 ---
 
+## 7c. "EC2 + RDS + Redis" architecture — review
+
+Ek common suggestion milti hai: t4g.large EC2 + alag RDS + Redis queue, ~$70-75/mo.
+Principles theek hain, **recommendation is project ke liye galat hai**. Facts pehle:
+
+### Jo sahi hai (aur already implement ho chuka hai)
+
+| Suggestion | Status |
+|---|---|
+| "API mein baith kar SES ka wait mat karo" | ✅ **already done** — `outbox_events` + worker (Phase 3) |
+| "SNS ko seedha server par nahi, SQS mein bhejo" | ✅ **already done** — Phase 7c ka poller |
+| "Database ko API se alag rakho" | ✅ **already done** — Neon alag service hai |
+| "Spike ko soch kar design karo" | ✅ sahi mindset |
+
+### Jo galat hai
+
+**1. EC2 + RDS = project decision ke against.** Tdr: hosting apne VPS par, Neon par
+Postgres; AWS par sirf SES/SNS/SQS. RDS $31-40/mo khaata hai jo Neon free/Launch se
+hone wala kaam karta hai.
+
+**2. Cost galat breakdown hai.** Verify kiya (Nov 2026, ap-south-1):
+
+| Item | Suggestion | Asli |
+|---|---|---|
+| t4g.large EC2 | ~$44 | **$32-36** (2x zyada bataya) |
+| RDS db.t4g.small | ~$25 | **$31 + storage $6 ≈ $37-40** (kam bataya) |
+| **Total** | $70-75 | **~$70-76** ✅ total theek, lines nahi |
+
+**3. Redis queue bekaar hai.** Postgres outbox already ek queue hai — durable, lease-fenced,
+crash-recoverable, tests ke saath. Redis add karne se: ek naya service, naya failure mode,
+aur *koi* naya guarantee nahi. Redis sirf tab chahiye jab throughput Postgres se zyada ho
+(~10k events/sec) — 50/s par nahi.
+
+**4. `t4g` burstable hai — database ke liye sabse bura.** 2 vCPU t4g ka baseline **20%**
+hai. Sustained load par CPU credits khatam → **throttle**. Burstable instance API ke liye
+chal jata hai, **database ke liye nahi**.
+
+**5. RDS db.t4g.small = 2 GB RAM.** 7b/7c ke saath 4 uvicorn + 2 worker = **~90
+connections**. 2 GB par RDS ka `max_connections` ~85-100 — bilkul edge par. (Neon Scale
+~680 deta hai.)
+
+**6. Windows se Linux migration chhup jati hai.** t4g arm64 Linux hai. Aapka app abhi
+Windows Server par chal raha hai — ye "upgrade" nahi, **migration** hai.
+
+**7. Asli bottleneck ka zikr nahi.** 20,000 tenants par DB **100 GB/month** badhta hai
+(body storage). Redis/EC2 usko nahi rokta — **retention** rokta hai (Phase 7c).
+
+### Jo genuinely accha point hai
+
+**RDS Mumbai** DB latency kam karta hai: Neon Singapore se **~50-70 ms** per query.
+6 queries per request = 300-400 ms baseline. RDS Mumbai ~5 ms dega. Ye asli fayda hai —
+magar $37/mo aur vendor lock ka. **Sasta solution: Neon ko Mumbai/Singapore region mein
+rakho** (already wahi hai), VPS bhi India mein rakho.
+
+### Corrected comparison — 10,000 customers
+
+| Setup | Monthly | Notes |
+|---|---|---|
+| **Current: VPS + Neon** | **₹1,850** (~$21) | already paid VPS |
+| Hostinger KVM 4 + Neon | ₹1,099-2,399 | Linux, 16 GB |
+| EC2 t4g.large + RDS | **~$70-76** (₹6,400) | 3-4x mehnga, plus migration |
+| EC2 + RDS + Multi-AZ | ~$120 | production "proper" |
+
+**$70/mo par 10,000 customers se $193 revenue** (3% × $19.30 / 10 = ~$580/mo) — theek hai,
+magar $50/mo bachana 2 paid customers ka poora contribution hai.
+
+### Kab ye architecture sahi ho jayegi
+
+| Trigger | Kya karo |
+|---|---|
+| 200,000+ customers | RDS + PgBouncer, ya managed platform |
+| DB latency problem ban jaye | Neon region check karo pehle, phir RDS |
+| Ek server ki limits aa jayein | 2nd VPS + load balancer (S3+LB, EC2 nahi) |
+| 500k customers | poora managed (ECS/RDS) — tab $58k SES bill ke saamne $2-4k sasta hai |
+
+---
+
 ## 8. Ek line ka verdict
 
 > **VPS ka rishta email volume se nahi, *concurrency* aur *peak rate* se hai.**
