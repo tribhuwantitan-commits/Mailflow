@@ -9,7 +9,7 @@ The behaviours that matter, in order of how badly they break production:
 5. A refusal writes nothing — no orphan email, no outbox event.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -32,6 +32,7 @@ from app.services.organizations import add_organization_with_owner
 from app.services.quota import (
     PlanMissing,
     QuotaExceeded,
+    current_month_usage,
     current_usage,
     effective_limit,
     load_limit,
@@ -69,6 +70,9 @@ def set_plan(engine, org_id, **limits):
                 daily_recipient_limit=limits.get("recipients", 3),
                 max_recipients_per_email=limits.get("per_email", 5),
                 per_recipient_daily_limit=limits.get("per_recipient", 0),
+                # Generous monthly cap by default so the daily tests still test daily.
+                monthly_email_limit=limits.get("monthly_emails", 1_000_000),
+                monthly_recipient_limit=limits.get("monthly_recipients", 1_000_000),
                 price_cents_usd=0,
             )
         )
@@ -243,8 +247,13 @@ def test_usage_endpoint_reports_limits_and_consumption(client, database_engine):
     assert body["plan"] == "free"
     assert body["limit"]["daily_emails"] == 50
     assert body["limit"]["per_recipient_daily_limit"] == 10
-    assert body["used"] == {"emails": 1, "recipients": 1}
-    assert body["remaining"] == {"emails": 49, "recipients": 49}
+    assert body["used"]["emails"] == 1
+    assert body["used"]["recipients"] == 1
+    assert body["used"]["monthly_emails"] == 1
+    assert body["remaining"]["emails"] == 49
+    assert body["remaining"]["recipients"] == 49
+    assert body["remaining"]["monthly_emails"] == 999
+    assert body["limit"]["monthly_emails"] == 1000
     assert usage.headers["Cache-Control"] == "no-store"
 
 
@@ -254,7 +263,12 @@ def test_usage_is_tenant_scoped(client, database_engine):
 
     _, second = setup(client, email="two@example.com", name="Two")
     body = client.get("/v1/emails/usage", headers=second).json()
-    assert body["used"] == {"emails": 0, "recipients": 0}
+    assert body["used"] == {
+        "emails": 0,
+        "recipients": 0,
+        "monthly_emails": 0,
+        "monthly_recipients": 0,
+    }
 
 
 def test_usage_today_only_resets_at_utc_midnight(client, database_engine):
@@ -330,6 +344,9 @@ def make_tenant(engine, **limits):
                 daily_recipient_limit=limits.get("recipients", 1),
                 max_recipients_per_email=limits.get("per_email", 5),
                 per_recipient_daily_limit=limits.get("per_recipient", 0),
+                # Generous monthly cap by default so the daily tests still test daily.
+                monthly_email_limit=limits.get("monthly_emails", 1_000_000),
+                monthly_recipient_limit=limits.get("monthly_recipients", 1_000_000),
                 price_cents_usd=0,
             )
         )
@@ -407,3 +424,83 @@ def test_every_paid_plan_can_afford_its_own_worst_case():
             f"{plan['slug']}: {monthly_emails:,} emails/month costs "
             f"${ses_cost:.2f} of SES but the plan only earns ${cents / 100:.2f}"
         )
+
+
+def test_monthly_cap_stops_a_tenant_who_spends_the_month_in_a_day(database_engine):
+    """50/day and 1,000/month are different promises, and only one is honest.
+
+    A real signup bursts on release day and sits idle after. If only the daily cap
+    existed, 20 straight days of the daily maximum would be 1,000 sends with the
+    monthly limit never consulted; the customer was told 1,000 for the month.
+    """
+    org_id, slug = make_tenant(
+        database_engine, emails=50, recipients=50, monthly_emails=100, monthly_recipients=100
+    )
+    with Session(database_engine) as db:
+        organization = db.get(Organization, org_id)
+        limit = load_limit(db, organization)
+
+        # Two days at the daily maximum: 100 sends, right at the monthly ceiling.
+        for day in (date(2026, 11, 1), date(2026, 11, 2)):
+            for _ in range(50):
+                reserve_send(
+                    db,
+                    organization=organization,
+                    recipients=["a@example.com"],
+                    limit=limit,
+                    day=day,
+                )
+            db.commit()
+
+        with pytest.raises(QuotaExceeded) as caught:
+            reserve_send(
+                db,
+                organization=organization,
+                recipients=["a@example.com"],
+                limit=limit,
+                day=date(2026, 11, 3),
+            )
+        assert caught.value.code == "monthly_email_quota_exceeded"
+        assert caught.value.headers["X-Quota-Monthly-Remaining"] == "0"
+        db.rollback()
+
+
+def test_monthly_cap_resets_with_the_calendar(database_engine):
+    """The ledger is summed per month, so December starts empty."""
+    # Daily higher than monthly on purpose: the monthly cap must be the binding one.
+    org_id, _ = make_tenant(
+        database_engine, emails=100, recipients=100, monthly_emails=60, monthly_recipients=60
+    )
+    with Session(database_engine) as db:
+        organization = db.get(Organization, org_id)
+        limit = load_limit(db, organization)
+        for _ in range(60):
+            reserve_send(
+                db,
+                organization=organization,
+                recipients=["a@example.com"],
+                limit=limit,
+                day=date(2026, 11, 30),
+            )
+        db.commit()
+        with pytest.raises(QuotaExceeded):
+            reserve_send(
+                db,
+                organization=organization,
+                recipients=["a@example.com"],
+                limit=limit,
+                day=date(2026, 11, 30),
+            )
+        db.rollback()
+
+        # Same tenant, next month: allowed again.
+        reserve_send(
+            db,
+            organization=organization,
+            recipients=["a@example.com"],
+            limit=limit,
+            day=date(2026, 12, 1),
+        )
+        db.commit()
+        used = current_month_usage(db, org_id, date(2026, 12, 1))
+        assert used.emails_sent == 1

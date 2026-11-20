@@ -293,7 +293,9 @@ def test_refused_send_does_not_consume_quota(client, verifier):
     org, headers = setup(client)
     assert client.post("/v1/emails", json=PAYLOAD, headers=headers).status_code == 403
     usage = client.get("/v1/emails/usage", headers=headers).json()
-    assert usage["used"] == {"emails": 0, "recipients": 0}
+    assert usage["used"]["emails"] == 0
+    assert usage["used"]["recipients"] == 0
+    assert usage["used"]["monthly_emails"] == 0
 
 
 def test_subdomain_of_verified_apex_is_not_implicitly_verified(client, verifier):

@@ -29,6 +29,8 @@ from app.models.quota import RecipientDailyCount, SendingPlan, UsageDaily
 OVERRIDABLE = (
     "daily_email_limit",
     "daily_recipient_limit",
+    "monthly_email_limit",
+    "monthly_recipient_limit",
     "max_recipients_per_email",
     "per_recipient_daily_limit",
 )
@@ -41,12 +43,27 @@ class EffectiveLimit:
     plan: str
     daily_email_limit: int
     daily_recipient_limit: int
+    monthly_email_limit: int
+    monthly_recipient_limit: int
     max_recipients_per_email: int
     per_recipient_daily_limit: int
 
 
 @dataclass(frozen=True)
 class Usage:
+    emails_sent: int
+    recipients_sent: int
+
+
+@dataclass(frozen=True)
+class MonthlyUsage:
+    """Calendar-month totals, summed from the daily ledger.
+
+    No separate monthly table: `usage_daily` already holds every send, so the sum is
+    the source of truth and cannot drift from it. The index on (organization_id,
+    usage_date) keeps this to a single short range scan.
+    """
+
     emails_sent: int
     recipients_sent: int
 
@@ -103,13 +120,48 @@ def current_usage(db: Session, organization_id: UUID, day: date | None = None) -
     return Usage(emails_sent=row.emails_sent, recipients_sent=row.recipients_sent)
 
 
-def _quota_headers(limit: EffectiveLimit, usage: Usage) -> dict[str, str]:
-    return {
+def month_bounds(day: date | None = None) -> tuple[date, date]:
+    """First day of the month and the day after the last, for a half-open range."""
+    current = day or utc_today()
+    first = current.replace(day=1)
+    following = (
+        date(first.year + 1, 1, 1) if first.month == 12 else date(first.year, first.month + 1, 1)
+    )
+    return first, following
+
+
+def current_month_usage(
+    db: Session, organization_id: UUID, day: date | None = None
+) -> MonthlyUsage:
+    first, following = month_bounds(day)
+    emails, recipients = db.execute(
+        select(
+            func.coalesce(func.sum(UsageDaily.emails_sent), 0),
+            func.coalesce(func.sum(UsageDaily.recipients_sent), 0),
+        ).where(
+            UsageDaily.organization_id == organization_id,
+            UsageDaily.usage_date >= first,
+            UsageDaily.usage_date < following,
+        )
+    ).one()
+    return MonthlyUsage(emails_sent=int(emails), recipients_sent=int(recipients))
+
+
+def _quota_headers(
+    limit: EffectiveLimit, usage: Usage, monthly: MonthlyUsage | None = None
+) -> dict[str, str]:
+    headers = {
         "X-Quota-Plan": limit.plan,
         "X-Quota-Limit": str(limit.daily_email_limit),
         "X-Quota-Remaining": str(max(0, limit.daily_email_limit - usage.emails_sent)),
+        "X-Quota-Monthly-Limit": str(limit.monthly_email_limit),
         "Retry-After": "3600",
     }
+    if monthly is not None:
+        headers["X-Quota-Monthly-Remaining"] = str(
+            max(0, limit.monthly_email_limit - monthly.emails_sent)
+        )
+    return headers
 
 
 def _ensure_row(db: Session, organization_id: UUID, day: date) -> None:
@@ -163,6 +215,24 @@ def reserve_send(
     if limit.per_recipient_daily_limit:
         _guard_recipients(db, organization.id, recipients, limit, day)
 
+    # Monthly first: it is the tighter of the two, and refusing here writes nothing.
+    # The check is advisory (a concurrent send can slip past it), which is fine --
+    # the daily UPDATE below stays the hard limit, so the overshoot is bounded by the
+    # number of in-flight requests, not by the tenant's traffic.
+    monthly = current_month_usage(db, organization.id, day)
+    if monthly.emails_sent + 1 > limit.monthly_email_limit:
+        raise QuotaExceeded(
+            "monthly_email_quota_exceeded",
+            f"Monthly limit of {limit.monthly_email_limit} emails reached for this plan.",
+            _quota_headers(limit, current_usage(db, organization.id, day), monthly),
+        )
+    if monthly.recipients_sent + recipient_count > limit.monthly_recipient_limit:
+        raise QuotaExceeded(
+            "monthly_recipient_quota_exceeded",
+            f"Monthly limit of {limit.monthly_recipient_limit} recipients reached for this plan.",
+            _quota_headers(limit, current_usage(db, organization.id, day), monthly),
+        )
+
     _ensure_row(db, organization.id, day)
     result = db.execute(
         update(UsageDaily)
@@ -180,7 +250,7 @@ def reserve_send(
     )
     if result.rowcount == 0:
         usage = current_usage(db, organization.id, day)
-        headers = _quota_headers(limit, usage)
+        headers = _quota_headers(limit, usage, current_month_usage(db, organization.id, day))
         if usage.emails_sent + 1 > limit.daily_email_limit:
             raise QuotaExceeded(
                 "email_quota_exceeded",
@@ -279,21 +349,29 @@ def usage_summary(db: Session, organization: Organization) -> dict[str, object]:
     """Everything a dashboard needs about today's usage, in one round trip."""
     limit = load_limit(db, organization)
     usage = current_usage(db, organization.id)
+    monthly = current_month_usage(db, organization.id)
     return {
         "plan": limit.plan,
         "limit": {
             "daily_emails": limit.daily_email_limit,
             "daily_recipients": limit.daily_recipient_limit,
+            "monthly_emails": limit.monthly_email_limit,
+            "monthly_recipients": limit.monthly_recipient_limit,
             "max_recipients_per_email": limit.max_recipients_per_email,
             "per_recipient_daily_limit": limit.per_recipient_daily_limit,
         },
         "used": {
             "emails": usage.emails_sent,
             "recipients": usage.recipients_sent,
+            "monthly_emails": monthly.emails_sent,
+            "monthly_recipients": monthly.recipients_sent,
         },
         "remaining": {
             "emails": max(0, limit.daily_email_limit - usage.emails_sent),
             "recipients": max(0, limit.daily_recipient_limit - usage.recipients_sent),
+            "monthly_emails": max(0, limit.monthly_email_limit - monthly.emails_sent),
+            "monthly_recipients": max(0, limit.monthly_recipient_limit - monthly.recipients_sent),
         },
         "resets_at": f"{utc_today()}T24:00:00Z",
+        "monthly_resets_at": f"{month_bounds()[1].isoformat()}T00:00:00Z",
     }

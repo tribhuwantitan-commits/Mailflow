@@ -54,7 +54,7 @@ def test_auth_organization_migration_applies_and_downgrades_cleanly(tmp_path, mo
             version = connection.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar_one()
-            assert version == "0008_plan_pricing"
+            assert version == "0009_monthly_quota"
     finally:
         engine.dispose()
 
@@ -84,6 +84,6 @@ def test_auth_organization_migration_applies_and_downgrades_cleanly(tmp_path, mo
                         version = connection.execute(
                             text("SELECT version_num FROM alembic_version")
                         ).scalar_one()
-                        assert version == "0008_plan_pricing"
+                        assert version == "0009_monthly_quota"
                 finally:
                     engine.dispose()

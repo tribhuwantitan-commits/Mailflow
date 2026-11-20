@@ -44,6 +44,8 @@ DEFAULT_PLANS: tuple[dict[str, object], ...] = (
         "daily_recipient_limit": 50,
         "max_recipients_per_email": 5,
         "per_recipient_daily_limit": 10,
+        "monthly_email_limit": 1000,
+        "monthly_recipient_limit": 1000,
         "price_cents_usd": 0,
     },
     {
@@ -54,6 +56,8 @@ DEFAULT_PLANS: tuple[dict[str, object], ...] = (
         "max_recipients_per_email": 10,
         # 0 means "no cap" to the guard, which let one address take all 100 sends.
         "per_recipient_daily_limit": 10,
+        "monthly_email_limit": 2500,
+        "monthly_recipient_limit": 2500,
         "price_cents_usd": 0,
     },
     {
@@ -66,6 +70,8 @@ DEFAULT_PLANS: tuple[dict[str, object], ...] = (
         "daily_recipient_limit": 1_000,
         "max_recipients_per_email": 50,
         "per_recipient_daily_limit": 0,
+        "monthly_email_limit": 30000,
+        "monthly_recipient_limit": 30000,
         "price_cents_usd": 900,
     },
     {
@@ -75,6 +81,8 @@ DEFAULT_PLANS: tuple[dict[str, object], ...] = (
         "daily_recipient_limit": 2_500,
         "max_recipients_per_email": 50,
         "per_recipient_daily_limit": 0,
+        "monthly_email_limit": 75000,
+        "monthly_recipient_limit": 75000,
         "price_cents_usd": 1_900,
     },
     {
@@ -84,6 +92,8 @@ DEFAULT_PLANS: tuple[dict[str, object], ...] = (
         "daily_recipient_limit": 5_800,
         "max_recipients_per_email": 50,
         "per_recipient_daily_limit": 0,
+        "monthly_email_limit": 174000,
+        "monthly_recipient_limit": 174000,
         "price_cents_usd": 3_900,
     },
     {
@@ -93,6 +103,8 @@ DEFAULT_PLANS: tuple[dict[str, object], ...] = (
         "daily_recipient_limit": 13_000,
         "max_recipients_per_email": 50,
         "per_recipient_daily_limit": 0,
+        "monthly_email_limit": 390000,
+        "monthly_recipient_limit": 390000,
         "price_cents_usd": 7_900,
     },
 )
@@ -118,6 +130,13 @@ class SendingPlan(Base):
     # 0 disables the per-recipient guard (paid plans); free plans keep it on so a
     # single address cannot be OTP-bombed through us.
     per_recipient_daily_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    #: Monthly ceiling on the same heading as the daily limit. Daily x 30 alone
+    #: lets a tenant spend their whole month in one afternoon, which is what makes
+    #: a plan's worst case unaffordable; these pin the monthly total directly.
+    monthly_email_limit: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    monthly_recipient_limit: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )
     price_cents_usd: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
