@@ -202,7 +202,8 @@ The current Starlette release emits a deprecation warning when its `TestClient` 
 [docs/SES-TEST-GUIDE.md](docs/SES-TEST-GUIDE.md),
 [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md),
 [docs/VPS-SIZING.md](docs/VPS-SIZING.md),
-[docs/PHASE-7B-QUOTA.md](docs/PHASE-7B-QUOTA.md) and
+[docs/PHASE-7B-QUOTA.md](docs/PHASE-7B-QUOTA.md),
+[docs/PHASE-7A-DOMAINS.md](docs/PHASE-7A-DOMAINS.md) and
 [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) for scope, limitations and sequencing.
 Do not treat these phases as implemented.
 

@@ -15,6 +15,7 @@ from app.api.email_auth import get_email_key
 from app.api.errors import APIError
 from app.models.delivery import APIKey, EmailMessage, OutboxEvent
 from app.models.organization import Organization
+from app.services.domains import sender_domain_allowed
 from app.services.quota import (
     PlanMissing,
     QuotaExceeded,
@@ -94,6 +95,19 @@ def plan_error() -> APIError:
     )
 
 
+def sender_not_verified(sender: str) -> APIError:
+    """Refuse a send whose From domain this tenant has not verified."""
+    domain = sender.rsplit("@", 1)[-1].lower() if "@" in sender else sender
+    return APIError(
+        status_code=403,
+        code="sender_domain_not_verified",
+        message=(
+            f"The domain {domain} is not verified for this organization. "
+            "Add and verify it under Sending domains before sending from it."
+        ),
+    )
+
+
 def existing(db: Session, key: APIKey, idempotency: str) -> EmailMessage | None:
     return db.scalar(
         select(EmailMessage).where(
@@ -122,6 +136,11 @@ def submit_email(
                 raise conflict()
             response.headers["Cache-Control"] = "no-store"
             return view(previous)
+
+        # A tenant may only send as a domain it has verified. Checked before quota
+        # so a refusal never consumes the tenant's daily allowance.
+        if not sender_domain_allowed(db, key.organization_id, str(payload.sender)):
+            raise sender_not_verified(str(payload.sender))
 
         # Reserve quota before insert so an idempotent replay never double-charges,
         # and a refusal writes nothing at all. The reservation and the email insert

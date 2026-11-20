@@ -12,6 +12,21 @@ if TYPE_CHECKING:
     from app.config import Settings
 
 
+def get_domain_verifier(settings: "Settings"):
+    """Return the DomainVerifier for the configured provider.
+
+    With MAIL_PROVIDER=ses this talks to real SES identities; otherwise a no-op
+    verifier keeps development and tests free of AWS calls.
+    """
+    if settings.mail_provider == "ses":
+        from app.providers.ses_identities import SESIdentityVerifier
+
+        return SESIdentityVerifier(settings)
+    from app.providers.ses_identities import NoopDomainVerifier
+
+    return NoopDomainVerifier()
+
+
 def get_email_provider(settings: "Settings") -> EmailProvider:
     """Return the configured email provider.
 
@@ -31,5 +46,6 @@ __all__ = [
     "EmailProvider",
     "OutboundEmail",
     "SubmissionResult",
+    "get_domain_verifier",
     "get_email_provider",
 ]

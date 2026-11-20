@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from conftest import enable_sending
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from test_auth import login, register
@@ -33,8 +34,9 @@ from app.services.quota import (
     reserve_send,
 )
 
+SENDER_DOMAIN = "mailer.example.com"
 PAYLOAD = {
-    "from": "sender@example.com",
+    "from": f"noreply@{SENDER_DOMAIN}",
     "to": ["receiver@example.com"],
     "subject": "Hello",
     "text_body": "Hello there",
@@ -44,6 +46,7 @@ PAYLOAD = {
 def setup(client, email="quota@example.com", name="Quota"):
     org = register(client, email=email, name=name).json()["organization"]["id"]
     login(client, email=email)
+    enable_sending(client, org, SENDER_DOMAIN)
     key = client.post(f"/v1/organizations/{org}/api-keys", json={"name": "Test"}).json()["key"]
     return org, {"X-API-Key": key}
 

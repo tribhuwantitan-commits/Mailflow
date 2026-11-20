@@ -61,3 +61,22 @@ def app(database_engine: Engine, test_settings: Settings):
 def client(app) -> Iterator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
+
+
+def enable_sending(client, organization_id: str, domain: str | None = None) -> dict:
+    """Give a tenant a verified sending domain.
+
+    Registration goes through ``/v1/organizations/{id}/domains`` so tests exercise
+    the real ownership check; with MAIL_PROVIDER=fake the no-op verifier marks it
+    verified immediately. A domain belongs to exactly one tenant, so when two
+    organizations need to exist the second one gets its own.
+    """
+    target = domain or f"tenant-{organization_id[:8]}.example.com"
+    response = client.post(f"/v1/organizations/{organization_id}/domains", json={"domain": target})
+    if response.status_code == 409 and domain:
+        response = client.post(
+            f"/v1/organizations/{organization_id}/domains",
+            json={"domain": f"tenant-{organization_id[:8]}.example.com"},
+        )
+    assert response.status_code == 201, response.text
+    return response.json()
