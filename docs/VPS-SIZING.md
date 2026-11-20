@@ -434,6 +434,208 @@ jo already planned hai) — ye quota 2x kar deta hai.
 
 ---
 
+## 6e. VPS aur email volume ka rishta — asli model
+
+Ye section wo sawaal answer karta hai: **"email volume badhe to VPS par kya asar padta hai?"**
+Jawab: **kaafi kam.** Volume ka asli asar kisi aur cheez par hota hai.
+
+### Ek email par server kitna kaam karta hai
+
+`POST /v1/emails` ka poora safar (`app/api/emails.py` line 86-137):
+
+| Step | Wall time | **CPU time** |
+|---|---|---|
+| HTTP parse + Pydantic validation | ~1 ms | 0.5 ms |
+| `existing()` idempotency lookup | 1-2 ms | 0.1 ms |
+| `INSERT email_messages` | 1-2 ms | 0.1 ms |
+| `INSERT outbox_events` | 1-2 ms | 0.1 ms |
+| `COMMIT` (fsync) | 2-5 ms | 0.1 ms |
+| `REFRESH` | 1-2 ms | 0.1 ms |
+| JSON serialize + respond | ~1 ms | 0.5 ms |
+| **Total** | **~10-15 ms** | **~1.5-2.5 ms** |
+
+**Nateeja:** ek email par **~2 ms CPU** lagta hai. Baaki sab **wait** hai (DB ka jawab, disk fsync).
+Wait CPU nahi khaata — isliye server mostly **idle** rehta hai.
+
+### Isliye volume ka VPS par asar ye hai
+
+```
+14.3M emails/month  =  5.5 emails/second avg
+                    =  5.5 × 2 ms  =  1.1% of ONE core
+```
+
+**Ek crore emails mahine ke liye bhi CPU ka 1% chahiye.** Isliye "zyada emails = bada VPS"
+**galat soch** hai.
+
+### Asli rishta — 3 alag cheezein
+
+```
+EMAIL VOLUME ──┬──→ SES bill           (LINEAR, $0.10/1K — sabse bada kharcha)
+               ├──→ DB storage          (LINEAR, 5 KB/email — sabse bada khatra)
+               ├──→ SES quota + rate    (LINEAR, HARD GATE — AWS ki limit)
+               │
+               ├─→ worker processes     (linear, magar sasta: 1 process = 30/s)
+               └─→ API CPU              (linear, magar ~2 ms/email = negligible)
+
+CONCURRENCY ───┬──→ uvicorn workers      (RAM: 150 MB each)
+               └──→ DB connections       (Neon ka limit)
+
+VPS SIZE = f(concurrency, peak rate)   ←  volume se seedha nahi
+```
+
+### Table: kya badhta hai, kya nahi
+
+| Cheez | Volume ke saath? | 14.3M/month par |
+|---|---|---|
+| **SES bill** | **LINEAR** | **$1,430/mo** |
+| **DB storage** | **LINEAR** | **72 GB/month** |
+| **SES quota** | **LINEAR (gate)** | **478k/day chahiye** |
+| Worker processes | linear, sasta | 1-2 (parallel ke saath) |
+| **API CPU** | linear, ~zero | **1.1% of one core** |
+| **VPS RAM** | **fixed by process count** | 4-6 GB |
+| **VPS disk** | sirf logs | 40 GB |
+| **Bandwidth** | ~zero | 70 GB/mo (text emails) |
+
+> **Ek line:** **VPS ka rishta email volume se nahi, *concurrency* aur *peak rate* se hai.**
+> Volume ka asar **SES bill** aur **database** par hota hai.
+
+---
+
+## 6f. "10,000 customer abhi se sambhalna hai" — plan
+
+Aapki soch sahi hai: 1k par launch karke spike aaye to bura hoga. Magar **spike protection
+VPS ka size nahi hota** — neeche dekho.
+
+### 10,000 customers ka load
+
+| | 10,000 **signups** (3% paid) | 10,000 **paying** |
+|---|---|---|
+| Emails/month | **14.3M** | **478M** |
+| Emails/day | 478k | 15.9M |
+| Avg/sec | 5.5 | 184 |
+| **Peak (3x)** | **17/s** | 553/s |
+| SES bill | **$1,430/mo** | **$47,800/mo** |
+| DB growth | 72 GB/mo | 2.4 TB/mo |
+| **VPS** | **4 vCPU / 16 GB** | ~40 vCPU |
+
+Neeche **10,000 signups** maan ke chala hoon (jo realistic hai).
+
+### Recommendation: **4 vCPU / 16 GB / 160 GB** — abhi se
+
+Ye shape **jaan-boojh kar** chuni hai:
+
+| | 4 vCPU | 8 vCPU |
+|---|---|---|
+| CPU | **kaafi se zyada** (1% use hoga) | waste |
+| RAM | 16 GB — spike ke liye headroom | same |
+| Price | ₹1,099-2,399 (Linux) | ₹2,199-4,399 |
+
+**RAM mehngi hai, CPU sasta.** Aapko RAM chahiye (workers + spike headroom), CPU nahi.
+Isliye **4 vCPU / 16 GB** best value shape hai — 8 vCPU par paisa waste hoga.
+
+| Provider | Plan | Spec | Price |
+|---|---|---|---|
+| **Hostinger KVM 4** 🇮🇳 | *Linux* | **4 vCPU / 16 GB / 200 GB** | **₹1,099 intro, ₹2,399 renew** |
+| Kamatera Mumbai | *Windows* | 4 vCPU / 16 GB | ~$60-70/mo |
+| AccuWebHosting | *Windows* | 4 vCPU / 16 GB | ~$60/mo |
+| Hostinger KVM 8 | Linux | 8 vCPU / 32 GB | ₹2,199 / ₹4,399 |
+
+Windows chahiye to ₹4,000-6,000/mo. Linux par ₹1,099-2,399. **Ye farq sirf Windows ka hai.**
+
+### 10,000 ke liye kitne workers
+
+| | Peak 17/s |
+|---|---|
+| uvicorn workers | **4** (40 threads each = 160 concurrent — aapka 500-1,000 concurrent ke liye kaafi) |
+| outbox workers | **2** (parallel send ke saath ~60/s) |
+| RAM | 2 GB OS + 0.6 + 0.3 + 2 GB headroom = **~5 GB** |
+
+**16 GB par 3x spike bhi sambhal jayega.**
+
+---
+
+## 6g. ⚠️ Spike protection — VPS nahi, ye 3 cheezein
+
+Aapka dar sahi hai ("spike aaya to sab gya"), magar bada VPS us dar ka ilaaj nahi hai.
+**Bada VPS 10x spike par bhi mar jayega** agar queue aur rate limit nahi hai.
+
+Aapka architecture **already** spike-friendly hai — ye samajh lo:
+
+```
+Spike: 1 minute mein 10,000 emails aa gaye (= 167/s, jabki peak 17/s hai)
+
+  1. API  ──→ 10,000 rows DB mein (6 queries each = 60,000 queries)
+  2. API turant 202 return karta hai  ✅  (SES ko wait nahi karta)
+  3. Outbox worker dheere-dheere bhejta hai (17/s)
+  4. Queue DB mein wait karta hai
+
+Matlab: spike API ko nahi maarta — WORKER peeche pad jata hai
+```
+
+Ye **by design** hai aur sahi hai. Spike ka asli risk **DB writes** hain:
+
+| 10x spike | Kitna |
+|---|---|
+| Queries/second | 60,000 ÷ 60 = **1,000 q/s** |
+| DB write rate | 167 × 5 KB = **835 KB/s** |
+| Neon | ✅ sambhal lega (pooled ke saath) |
+| VPS CPU | **0.3% — kuch nahi** |
+
+### Isliye asli spike protection ye hai
+
+| # | Kya | Kyun |
+|---|---|---|
+| 1 | **Async queue** (aapke paas hai ✅) | spike API ko nahi maarta |
+| 2 | **Per-customer rate limit** (Phase 7b) | ek customer poora DB flood na kar de |
+| 3 | **DB connection pooling** (Neon pooled) | 1,000 q/s ke liye |
+| 4 | **Worker parallelism** | queue time kam |
+| 5 | ~~Bada VPS~~ | **isliye nahi** |
+
+**#2 sabse important hai.** Ek galat customer 100,000 emails ek minute mein bhej de →
+aapka poora platform slow. Rate limit hi bachaata hai, RAM nahi.
+
+---
+
+## 6h. ⚠️ AWS quota — 10,000 par yehi pehle tootega
+
+Aapne kaha "14/sec is good" — **shuruaat ke liye haan.** Magar ye jaan lo:
+
+**SES mein DO limits hain, aur dono alag hain:**
+
+| | Kya | Default production | 10,000 customers ko chahiye |
+|---|---|---|---|
+| **Quota** | kitne emails ek **din** mein | **50,000/day** | **478,000/day** |
+| **Rate** | kitne ek **second** mein | **14/sec** | **17/sec** |
+
+### Quota hi asli deewar hai
+
+```
+50,000/day × 30  =  1.5M emails/month
+                 =  ~2,500 customers (blended)
+```
+
+**14/sec rate theek hai (17/s chahiye, magar burst ke liye). Magar 50,000/day quota
+10,000 customers par 10x kam padta hai.**
+
+### Kya karo — steps mein (ek saath nahi)
+
+| Stage | Maango | Kab |
+|---|---|---|
+| Production access | 50,000/day, 14/sec | launch se pehle |
+| Pehla raise | **200,000/day, 20/sec** | 1,000 customers (bounce < 0.5%) |
+| Doosra raise | **500,000/day, 30/sec** | 3,000 customers |
+| Teesra raise | **1,000,000/day, 50/sec** + dedicated IP | 10,000 customers |
+
+**AWS quota badhata hai aapke reputation ke hisaab se — maangne se nahi.** Isliye:
+bounce < 5%, complaint < 0.1% **clean rakho**, phir har 2-3 mahine raise maango.
+
+⚠️ **Ye 2-3 hafte lag sakte hain.** Isliye 10,000 customers aane se **pehle** maangna shuru karo.
+
+**Backup plan:** aapka marketing account (separate AWS account) **alag quota** dega —
+2x capacity. Ye already planned hai.
+
+---
+
 ## 7. Aaj ka action — 3 commands
 
 **1. Apne current VPS ke specs check karo** (PowerShell):
@@ -533,8 +735,17 @@ agar threads/pool/worker sahi hon.
 
 ## 8. Ek line ka verdict
 
-> **4 vCPU / 8 GB / 80 GB — bas itna.** 16 GB ki zaroorat nahi jab tak 20,000 *tenants*
-> na hon. Magar **VPS badalne se pehle 4 code changes** karo (`--workers 4`, pool 80,
-> Neon pooled, worker parallel) — warna bada box bhi 500 concurrent par nahi chalega.
-> Aur **sabse pehle DB retention** — 20k emails/day par Neon free 1 GB **3 mahine** mein
-> bhar jayega.
+> **VPS ka rishta email volume se nahi, *concurrency* aur *peak rate* se hai.**
+> Ek email par server sirf **2 ms CPU** kharch karta hai — 14 million emails/month bhi
+> ek core ka **1%** hai. Volume ka asar **SES bill** ($1,430/mo), **DB storage** (72 GB/mo)
+> aur **AWS quota** par hota hai — VPS par nahi.
+>
+> **10,000 customers ke liye: 4 vCPU / 16 GB / 160 GB.** CPU waste hai, RAM chahiye.
+> Windows chahiye to ~$60-70/mo; Linux (Hostinger KVM 4 India) **₹1,099-2,399/mo**.
+>
+> **Aur sabse zaroori:** spike se bachav **bade VPS se nahi** hota. Queue (aapke paas
+> hai ✅) + per-customer rate limit (Phase 7b) + DB pooling. Bada VPS 10x spike par bhi
+> mar jayega agar rate limit nahi hai.
+>
+> **Jo actually 10,000 par tootega:** AWS ka **50,000/day quota** (aapko 478,000 chahiye),
+> Neon ka **connection limit**, aur **email body storage** (72 GB/month). VPS nahi.
