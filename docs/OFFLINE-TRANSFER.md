@@ -60,9 +60,14 @@ wala sabse confusing bug hota hai.
 Dropbox par, commit ke naam ke saath:
 
 ```
-MailFlow-dd03575-sources.zip    411 KB    108 files
-sha256 6091321169863cb0bca2d50404a143132fdb5baad1f64b77c3517083dfba1f6b
+MailFlow-902dbd3-sources.zip    278 KB    128 files
+sha256 f6f1b26a22849bdcd4f95f26620c0ad22a5883a086e7840f2c6af923f2f3def1
 ```
+
+Link (Dropbox): file `MailFlow-902dbd3-sources.zip` — share link se download karo.
+
+> Naya package banane ke liye: `./scripts/package.sh` (repo root se). Wo `git archive`
+> se tree banata hai aur **usi waqt** `docs/VERSION.txt` likhta hai.
 
 Ismein **sirf source** hai: `app/`, `tests/`, `alembic/`, `docs/`, `AGENTS.md`.
 **Nahi** hai: `.venv`, `__pycache__`, `.env`, `mailflow.db`, koi bhi secret.
@@ -76,7 +81,7 @@ cd C:\apps
 # agar purani copy hai
 if (Test-Path .\MailFlow) { Remove-Item .\MailFlow -Recurse -Force }
 
-Expand-Archive -Path "$env:USERPROFILE\Downloads\MailFlow-dd03575-sources.zip" -DestinationPath C:\apps
+Expand-Archive -Path "$env:USERPROFILE\Downloads\MailFlow-902dbd3-sources.zip" -DestinationPath C:\apps
 cd C:\apps\MailFlow
 ```
 
@@ -86,17 +91,21 @@ cd C:\apps\MailFlow
 Get-Content .\docs\VERSION.txt
 ```
 
-### ✅ Naya: `docs/VERSION.txt`
+### ✅ `docs/VERSION.txt` — har package mein
 
 Har ZIP mein ek chhoti file hoti hai jo batati hai **kya** hai:
 
 ```
-commit: dd03575
+commit: 902dbd3
 branch: arena/67b5c744-mailflow
 built:  2026-11-20
 tests:  157 passed, 1 skipped
 head:   0009_monthly_quota
+source: package
 ```
+
+> `source: package ... (contains uncommitted changes)` dikhe to package **sahi nahi hai** —
+> dobara banao.
 
 **Yahi aapka sabse zaroori checkpoint hai.** Agar `tests:` line `157 passed` nahi
 kehti, to aap galat ZIP par ho.
@@ -258,7 +267,8 @@ Ye git repo nahi hai — sirf extracted source hai, to git commands mat chalao.
 
 | | |
 |---|---|
-| **Aaj** | ZIP: `MailFlow-dd03575-sources.zip` (411 KB) |
+| **Aaj** | ZIP: `MailFlow-902dbd3-sources.zip` (278 KB) |
+| **Banane ka command** | `./scripts/package.sh` |
 | **Verify** | `docs/VERSION.txt` → `157 passed` |
 | **Sabse bada khatra** | Server par edit kiya code **git mein nahi** hai |
 | **Niyam** | Server par sirf `.env` edit |
