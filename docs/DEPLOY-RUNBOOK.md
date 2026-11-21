@@ -160,26 +160,48 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 ---
 
-## Step 6: Firewall
+## Step 6: Firewall — **default: skip karo**
+
+Poora testing RDP ke andar hota hai (`127.0.0.1:8000`), to firewall rule **chahiye
+hi nahi**. Sirf tab banaiye jab aap apne laptop/phone se bahar se test karna chahte
+hain — aur us haalat mein `--host 127.0.0.1` ki jagah `0.0.0.0` lagta hai.
+
+Bahar se test karna hai to:
 
 ```powershell
 New-NetFirewallRule -DisplayName "MailFlow API 8000" -Direction Inbound `
   -Protocol TCP -LocalPort 8000 -Action Allow -Profile Any
 ```
 
+Geela kaam khatam hone par **turant** band kar do:
+
+```powershell
+Set-NetFirewallRule -DisplayName "MailFlow API 8000" -Enabled False
+```
+
 **Checkpoint:** `Get-NetFirewallRule -DisplayName "MailFlow API 8000" | Format-List Name,Enabled,Direction`
 
-> ⚠️ **8000 poore internet par khula hai.** Testing ke liye theek. Baad mein:
-> sirf 443 kholo (Caddy/nginx ke through) aur 8000 ko `127.0.0.1` par band karo.
+> ⚠️ **8000 poore internet par khula = `/v1/auth/register` bhi khula.** Wo endpoint
+> bina login hai. Matlab koi bhi ajnabi aapke server par account bana kar — aapke SES
+> credentials aur aapke verified domain se — email bhej sakta hai. Wo kharch aur wo
+> reputation, dono aapke.
+>
+> Isliye aajkal ka default yahi hai: **rule nahi banaiye.** Dashboard RDP ke andar
+> khul jaata hai. Internet par kholna ho to HTTPS (Step 13) ke baad kholiye, tab
+> ek darwaza hota hai, dono nahi.
 
 ---
 
 ## Step 7: API chalao (manual, pehli baar)
 
 ```powershell
-cd C:\apps\Mailflow\backend
-.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd C:\apps\MailFlow\backend
+.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
+
+> `127.0.0.1` = sirf server ke andar. Bahar se test karna hai to `0.0.0.0` karo,
+> par tab Step 6 ka firewall rule banega — aur kaam khatam hone par band karna na
+> bhoolna.
 
 **Checkpoint** — **doosri** PowerShell window mein:
 
@@ -193,12 +215,16 @@ curl.exe http://localhost:8000/health/ready
 | live | `{"status":"ok"}` |
 | ready | `{"status":"ready","checks":{"database":"ok"}}` |
 
-Aur **bahar** se (apne laptop ke browser mein): `http://<public-ip>:8000/health/live`
+Bahar se test **sirf tab** karein jab aapne `--host 0.0.0.0` aur Step 6 ka rule
+lagaya ho. Apne laptop ke browser mein: `http://<public-ip>:8000/health/live`
 
 | Result | Matlab |
 |---|---|
-| JSON dikha | ✅ firewall theek |
+| JSON dikha | ✅ firewall theek — **aur ab poore internet par khula hai** |
 | Timeout | ❌ provider ka firewall block kar raha hai (Windows firewall nahi) |
+
+> Test khatam? `Set-NetFirewallRule -DisplayName "MailFlow API 8000" -Enabled False`
+> aur `--host 127.0.0.1` par wapas aa jaayein.
 
 ---
 
@@ -231,12 +257,29 @@ start http://localhost:8000/dashboard
 
 ## Step 9: API ko restart-proof karo (Task Scheduler)
 
-**File banao** `C:\apps\Mailflow\backend\run-api.ps1`:
+**Ky zaroori hai:** Step 7 mein API ek PowerShell window mein chali. Wo window band
+karo, ya RDP timeout ho, ya server reboot ho — API chup-chaap band. "Restart-proof"
+matlab: **server restart hone par bhi apne aap wapas chalu ho, bina kisi command ke.**
+
+**File banao** `C:\apps\MailFlow\backend\run-api.ps1`:
 
 ```powershell
- Set-Location C:\apps\Mailflow\backend
-& .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+Set-Location "C:\apps\MailFlow\backend"
+
+$logDir = "C:\apps\MailFlow\logs"
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+
+& ".\.venv\Scripts\python.exe" -m uvicorn app.main:app `
+    --host 127.0.0.1 --port 8000 *>> "$logDir\api.log"
 ```
+
+> **`127.0.0.1` kyun, `0.0.0.0` kyun nahi:** dashboard RDP ke andar hi use hota hai.
+> `0.0.0.0` poore internet par khol deta hai, aur `/v1/auth/register` **bina login**
+> khula hai — matlab koi bhi aapke SES par account bana kar email bhej sakta hai.
+> `127.0.0.1` par wahi page chalta hai, par bahar se kuch nahi khulta.
+>
+> **`*>> ...api.log` kyun:** Task Scheduler mein koi window nahi hoti, to crash ka
+> koi nishaan nahi bachta. Ye file hi ekmatra wajah batati hai.
 
 **Task Scheduler** → Create Task:
 
@@ -244,13 +287,35 @@ start http://localhost:8000/dashboard
 |---|---|
 | General | Name: `MailFlow API` · Run whether user logged on or not · Run with highest privileges |
 | Triggers | New → **At startup** · Delay 30 seconds |
-| Actions | New → Program: `powershell.exe` · Arguments: `-NoProfile -ExecutionPolicy Bypass -File C:\apps\Mailflow\backend\run-api.ps1` · Start in: `C:\apps\Mailflow\backend` |
+| Actions | New → Program: `powershell.exe` · Arguments: `-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\apps\MailFlow\backend\run-api.ps1` · Start in: `C:\apps\MailFlow\backend` |
 | Settings | **Uncheck** "Stop the task if it runs longer than" · "If the task fails, restart every 1 minute, 3 times" |
 
-Pehli window band karo (jo Step 7 mein chali thi), phir task **Run** karo.
+GUI ki jagah PowerShell se karna ho to yahi ek block kaafi hai:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "powershell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\apps\MailFlow\backend\run-api.ps1" `
+    -WorkingDirectory "C:\apps\MailFlow\backend"
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$trigger.Delay = "PT30S"
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
+Register-ScheduledTask -TaskName "MailFlow API" -Action $action -Trigger $trigger `
+    -Principal $principal -Settings $settings -Description "MailFlow API" -Force
+```
+
+`-ExecutionTimeLimit 0` zaroori hai: default 3 din baad Windows task ko maar deta hai.
+
+Pehli window band karo (jo Step 7 mein chali thi), phir task **Run** karo:
+`Start-ScheduledTask -TaskName "MailFlow API"`
 
 **Checkpoint:** `Get-Process python` mein process dikhe, aur `/health/live` phir 200 de.
 Ab **server reboot** karo — api khud wapas aani chahiye.
+
+> Na aaye to `Get-Content C:\apps\MailFlow\logs\api.log -Tail 30` — wajah wahin likhi
+> hogi. Troubleshooting table is doc ke aakhir mein hai.
 
 ---
 
@@ -352,15 +417,15 @@ Set-NetFirewallRule -DisplayName "MailFlow API 8000" -Enabled False
 | # | Step | Checkpoint | Time |
 |---|---|---|---|
 | 0 | Internet + AWS test | dono True | 3 min |
-| 1 | Python + Git | `python --version` 3.12 | 5 min |
-| 2 | Clone (**right branch**) | `cbc1fa9`+ on `arena/...` | 5 min |
+| 1 | Python + Git | `python --version` 3.11+ | 5 min |
+| 2 | ZIP ya clone | `VERSION.txt` mein `157 passed` | 5 min |
 | 3 | venv + install | `import ok` | 10 min |
 | 4 | `.env` | untracked in git | 3 min |
 | 5 | **migrate + pytest** | **157 passed** | 5 min |
-| 6 | Firewall 8000 | rule exists | 1 min |
+| 6 | Firewall 8000 | rule exists (**ya skip, `127.0.0.1` par** ) | 1 min |
 | 7 | uvicorn | `/health/ready` → ready | 3 min |
 | 8 | **Tenant + dashboard** | page khula | 5 min |
-| 9 | API auto-restart | reboot ke baad bhi 200 | 10 min |
+| 9 | API auto-restart | **reboot ke baad bhi 200, bina command** | 10 min |
 | 10 | Outbox worker | `worker_tick` log | 10 min |
 | 11 | Poller (SQS ke baad) | `event_poll` log | 10 min |
 | 12 | Retention job | `maintenance_windows` log | 5 min |
@@ -385,3 +450,10 @@ Set-NetFirewallRule -DisplayName "MailFlow API 8000" -Enabled False
 | Bahar se timeout | Provider firewall | Console mein port 8000 kholo |
 | `157 passed` ki jagah kam | **Purana ZIP / galat branch** | `docs/VERSION.txt` check karo, fresh extract |
 | `git` command not recognised | ZIP se extract kiya, git repo nahi hai | `git` commands skip karo — ZIP raaste par zaroorat nahi |
+| Dashboard RDP band karne ke baad nahi khulta | Step 9 nahi hua — API usi session mein thi | Step 9 karo, phir reboot test |
+| Step 9 ke baad bhi reboot par nahi chala | Task chala par uvicorn crash hua | `Get-Content C:\apps\MailFlow\logs\api.log -Tail 30` |
+| `api.log` khaali | Script hi nahi chali (path/argument galat) | `Get-ScheduledTask -TaskName "MailFlow API" \| Get-ScheduledTaskInfo` |
+| `address already in use` | Purana python process zinda hai | `Stop-Process -Name python -Force` |
+| Task 3 din baad khud band | Default execution time limit | `-ExecutionTimeLimit (New-TimeSpan -Seconds 0)` |
+| GitHub Actions run hi nahi dikha | Workflow `main` par nahi pahuncha | `main` par merge karo, ya Actions tab se enable karo |
+| Actions tick green par deploy nahi hua | **Ye normal hai** — CI sirf code check karta hai | Deploy alag hai; Step 7/9 server par |

@@ -17,7 +17,13 @@ email-detail page. PostgreSQL has not been validated end to end — no connectio
 in this environment, so `tests/test_postgres_integration.py` skips.
 
 Deployment: [docs/DEPLOY-RUNBOOK.md](docs/DEPLOY-RUNBOOK.md) is the Windows Server
-procedure, step by step with checkpoints.
+procedure, step by step with checkpoints. Where each kind of test belongs — CI, a
+Codespace, a phone, or the server — is [docs/TESTING-SURFACES.md](docs/TESTING-SURFACES.md).
+
+Continuous integration: [.github/workflows/ci.yml](.github/workflows/ci.yml) runs ruff,
+a format check and the full pytest suite on every push and pull request, and fails if
+fewer than 150 tests are collected. A green run means the code is sound; it does **not**
+mean anything was deployed.
 
 ## 1. Work and file-transfer workflow
 
@@ -226,7 +232,8 @@ The current Starlette release emits a deprecation warning when its `TestClient` 
 [docs/MARKETING-PLAYBOOK.md](docs/MARKETING-PLAYBOOK.md),
 [docs/PHASE-9-DASHBOARD.md](docs/PHASE-9-DASHBOARD.md),
 [docs/DEPLOY-RUNBOOK.md](docs/DEPLOY-RUNBOOK.md),
-[docs/OFFLINE-TRANSFER.md](docs/OFFLINE-TRANSFER.md) and
+[docs/OFFLINE-TRANSFER.md](docs/OFFLINE-TRANSFER.md),
+[docs/TESTING-SURFACES.md](docs/TESTING-SURFACES.md) and
 [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) for scope, limitations and sequencing.
 Do not treat these phases as implemented.
 
