@@ -73,7 +73,45 @@ Aapke laptop ka browser kaafi hai.
 
 ---
 
-## 3. Android — app ke roop mein chalao, sirf smoke test ke liye
+## 3. Kisi bhi box par 30 second mein demo: `scripts/demo-local.sh`
+
+Agar aap sirf ye dekhna chahte hain ki dashboard chal raha hai ya nahi — RDP nahi,
+Postgres nahi, koi setup nahi:
+
+```bash
+./scripts/demo-local.sh
+# phir: http://127.0.0.1:8000/dashboard
+```
+
+| Ye kya karta hai | Ye kya **nahi** karta |
+|---|---|
+| `create_all` se SQLite DB banata hai | `alembic upgrade head` nahi |
+| Asli routes se tenant seed karta hai (register → login → domain → key → send) | SES nahi, email bahar nahi jaati |
+| `127.0.0.1` par serve karta hai | internet par khulta nahi |
+| Plan catalogue seed karta hai | workers nahi chalte |
+
+Expected output:
+
+```
+[ok  ] register demo@example.com: HTTP 201
+[ok  ] login demo@example.com (cookie in this client): HTTP 200
+[ok  ] sender domain demo-73929d1a.example.com: HTTP 201
+[ok  ] api key: HTTP 201
+[ok  ] send one email: HTTP 202
+```
+
+Dashboard par **teen tick** dikhne chahiye, aur `Today 1 of 50`, `This month 1 of
+1,000`. Chautha tick khaali rahega — wo fake provider ka imaandaar nateeja hai.
+
+Flags: `DEMO_PORT=8080`, `DEMO_DIR=/tmp/x`, `DEMO_FRESH=1` (purana DB mita do).
+
+> **Ye demo hai, deploy nahi.** Iska green hona sirf ye saabit karta hai ki "page
+> render hota hai". Migrations, Postgres, SES aur auto-start — inke liye server
+> chahiye (neeche section 6).
+
+---
+
+## 4. Android — app ke roop mein chalao, sirf smoke test ke liye
 
 Server chalti haalat mein Android browser se `http://<server-ip>:8000/dashboard`
 khul sakta hai. Par ye **screen chhoti hai, aur port khula hai** — do dikkatein.
@@ -96,7 +134,7 @@ liye phone galat jagah hai — 8 GB server bhi kaafi nahi, phone to bilkul nahi.
 
 ---
 
-## 4. altare.gg — nahi. (Ye pehle tay ho chuka hai)
+## 5. altare.gg — nahi. (Ye pehle tay ho chuka hai)
 
 | Wajah | Detail |
 |---|---|
@@ -112,7 +150,7 @@ na khula jaaye.
 
 ---
 
-## 5. labs.2z2.top — sunne mein theek, par pehle 4 sawaal
+## 6. labs.2z2.top — sunne mein theek, par pehle 4 sawaal
 
 Ye aapka apna panel lagta hai. Agar hai, to ye **sabse accha option** ho sakta hai —
 RDP ka poora jhanjhat khatam. Par deploy karne se pehle ye chaar cheezein pata karni
@@ -135,7 +173,7 @@ ho jaayega.
 
 ---
 
-## 6. Jo sirf server par ho sakta hai (aur isliye RDP ka koi vikalp nahi)
+## 7. Jo sirf server par ho sakta hai (aur isliye RDP ka koi vikalp nahi)
 
 Ye chaar cheezein kisi bhi doosre surface par test nahi ho sakti. Inke liye server
 chahiye — par ye **ek hi baar** ka kaam hai, roz ka nahi:
@@ -152,10 +190,11 @@ par sirf ye chaar cheezein, ek baar, dhyan se.
 
 ---
 
-## 7. Practical sequence — kis din kya
+## 8. Practical sequence — kis din kya
 
 | # | Kahan | Kaam | RDP chahiye? |
 |---|---|---|---|
+| 0 | koi bhi box | `./scripts/demo-local.sh` → dashboard dikhta hai | ❌ |
 | 1 | laptop | code push | ❌ |
 | 2 | GitHub Actions | green tick dekho | ❌ |
 | 3 | laptop / Codespaces | OpenCode se changes | ❌ |
@@ -169,8 +208,8 @@ Din bhar ka kaam laptop par. RDP par **mahine mein 2–3 baar**, 10 minute.
 
 ---
 
-## 8. Ek line ka jawab
+## 9. Ek line ka jawab
 
-**Tests GitHub Actions par, code Codespaces par, deploy RDP par, demo Android par.**
+**Tests GitHub Actions par, code Codespaces par, deploy RDP par, demo `scripts/demo-local.sh` se — aur bina kisi box ke Android par bhi.**
 
 altare.gg — nahi. labs.2z2.top — poochho pehle, mile to RDP chhod do.

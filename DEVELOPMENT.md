@@ -20,6 +20,10 @@ Deployment: [docs/DEPLOY-RUNBOOK.md](docs/DEPLOY-RUNBOOK.md) is the Windows Serv
 procedure, step by step with checkpoints. Where each kind of test belongs — CI, a
 Codespace, a phone, or the server — is [docs/TESTING-SURFACES.md](docs/TESTING-SURFACES.md).
 
+Demo in one command, on any box with Python 3.11+: `./scripts/demo-local.sh` builds a
+throwaway SQLite database, seeds a tenant through the real routes and serves the app on
+`127.0.0.1:8000`. It is a demo, not a deploy — no migrations, no Postgres, no SES.
+
 Continuous integration: [.github/workflows/ci.yml](.github/workflows/ci.yml) runs ruff,
 a format check and the full pytest suite on every push and pull request, and fails if
 fewer than 150 tests are collected. A green run means the code is sound; it does **not**
