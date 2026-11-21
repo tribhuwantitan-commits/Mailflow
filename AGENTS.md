@@ -53,7 +53,7 @@ Every command goes through the venv's interpreter. On Windows that means
 | Lint | `python -m ruff check .` | `All checks passed!` |
 | Format check | `python -m ruff format --check .` | `N files already formatted` |
 | Migrations | `python -m alembic upgrade head` | head is `0009_monthly_quota` |
-| API | `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000` | `/health/live` → `{"status":"ok"}` |
+| API | `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000` | `/health/live` → `{"status":"ok"}` |
 | Outbox worker | `python -m app.services.outbox` | one tick, then exit |
 | Event poller | `python -m app.services.event_poller --loop` | needs `SQS_EVENT_QUEUE_URL` |
 | Maintenance | `python -m app.services.maintenance` | nulls old bodies/payloads |
@@ -61,6 +61,20 @@ Every command goes through the venv's interpreter. On Windows that means
 **The one skipped test is deliberate.** `tests/test_postgres_integration.py` skips unless
 `MAILFLOW_TEST_POSTGRES_URL` is set. Everything else runs on SQLite. Do not "fix" the
 skip by hardcoding a URL.
+
+### Where to run what
+
+The same tests run in **GitHub Actions** (`.github/workflows/ci.yml`) on every push and
+pull request: ruff, format check, pytest, plus a guard that fails if fewer than 150
+tests are collected. **Do not open the RDP box to find out whether code is broken** —
+read the Actions tab. The server is for the four things CI cannot do: real Postgres
+migrations, real SES calls, the SQS event path, and OS-level auto-start.
+
+Do not bind uvicorn to `0.0.0.0` on the RDP host. `/v1/auth/register` is unauthenticated,
+so a public port 8000 lets strangers create tenants that send mail through the owner's
+SES account. `127.0.0.1:8000` serves `/dashboard` inside RDP perfectly well.
+
+See `docs/TESTING-SURFACES.md` for the full split (CI, Codespaces, Android, server).
 
 ---
 
@@ -184,10 +198,17 @@ The target is a Windows Server reached over RDP. There is no Docker there (Docke
 Desktop is unsupported on Windows Server) and no systemd.
 
 - Venv interpreter: `.venv\Scripts\python.exe`
-- uvicorn: `--host 0.0.0.0` is required, `127.0.0.1` is not reachable from outside.
+- uvicorn: bind `127.0.0.1` unless there is a reason to expose the port. The dashboard
+  is used inside RDP, so `127.0.0.1:8000` is enough. `0.0.0.0` plus an open port 8000
+  exposes the unauthenticated `/v1/auth/register` to the internet, which lets strangers
+  send mail on the owner's SES account. Only bind `0.0.0.0` behind HTTPS, and close the
+  firewall rule again the moment testing is over.
 - Background workers are **one-tick processes**, not loops. Schedule them with Task
   Scheduler every minute; `Restart=always` equivalents do not exist here.
-- Windows Defender Firewall must have an inbound rule for the port.
+- Task Scheduler's default execution time limit silently kills a long-running task
+  after three days. Always set `-ExecutionTimeLimit (New-TimeSpan -Seconds 0)`.
+- A task with no window has no console output. Redirect the child process to a log file
+  (`*>> logs\api.log`) or a crash leaves no evidence at all.
 - Use `curl.exe` in PowerShell, not `curl` (which is an alias for `Invoke-WebRequest`).
 
 Full step-by-step: `docs/DEPLOY-RUNBOOK.md`. Hosting choice and why Ubuntu is cheaper:

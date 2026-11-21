@@ -34,3 +34,4 @@ Desktop.ini
 *.zip
 !deploy/*.zip
 docs/VERSION.txt
+.demo/
